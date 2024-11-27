@@ -1,0 +1,5140 @@
+-----------MSA CODe-----------------
+------------------------MSA Steps-----------------------
+First 3 jarfiles and domain.xml should be in the main folder
+
+then create main folder msaApp in that folder resourceapp and clientapp
+
+First create 2 app client and resource with archtype and then select javaee8-microprofile-archtype 
+
+Resource(Basically Api App)
+--in Resource app---
+make changes in pom.xml version to 3.2
+then restfulservices->ExampleService->
+@GET
+@Path("/hello")
+@Produces(Mediatype.text_html) //ws.rs valu import karvu
+public String getHello(){
+    return "<h1>Hello Resource App</h1>"
+}
+->then clean build app and run select payara server
+->Url to run app 
+    Resource/rest/example/gethello
+
+------now create secondapp clientApp with same steps as above------
+
+->sourcepackages->new interface->exampleinterface
+    @GET
+    @Path("/hello")
+@Produces(Mediatype.text_html) //ws.rs valu import karvu
+
+
+othersources->new folder META-INF -> new properties filename microprofile-config.properties 
+in thsn file 
+apiurl/mp-rest/url = http://localhost:8085/ResourceAppMSA/rest/example
+
+in interface file at the top
+@Registerclient(configkey = "apiurl")
+
+-------------create servlet----------
+sourcepackages->new servlet->ExampleServlet(package name servlets)
+
+in exampleservlet
+@inject
+@restclient
+exampleintereface ei;
+
+ei.getHello();//in servlet html code
+
+---------------now cleanbuild and run app-------------
+
+----both this should be run in terminal according to our app path ---
+
+java -jar payara-micro-5.2022.2.jar --deploy MSAApp/artifact/MSAApp.war --port 8085
+
+//here port number which we want our app to run
+
+java -jar payara-micro-5.2022.2.jar --deploy MSAClient/artifact/MSAClient.war --port 8086
+
+//After this we have to change port number in config file then chek if it is working or not 
+
+
+-----------------------------------------------------------------------------------------------------------DATABASE STARTS HERE--------------------------------------
+CREATE A DEMO DATABSE 
+
+  ->to create pool right click on payara server then adminconsole 
+  then in jdbc connection pools 
+  in this poolname
+  resourcetype 
+  database vendor mysql or mysql8
+
+->Properties in jdbc connection pools
+URL: jdbc:mysql//3306/demo
+ServerName : localhost
+password : root
+user : root
+portNumber : 3306
+driverClass : com.mysql.jdbx.optional.MysqlDataSource or com.mysql.jdbc.Driver or com.mysql.cj.jdbc.Driver
+driver : com.mysql.jdbx.optional.MysqlDataSource
+databaseName : demo
+
+->jdbc resource 
+    jdbc/msa
+    poolname : msapool
+
+----------------------------------------Code Starts here Db connection ends-------------------------
+
+In ResourceApp->Source Packages -> new Entity class from database 
+
+jdbc/url : jdbc:mysql://localhost/3306/demo?useSSL=false
+
+-------------persistence will be created in config file ------------
+in persistence comment exclude tag
+
+------------noew create session bean-----------
+source packages -> ejbname (emamplbean) -> packages(beans)
+
+exampleservice.java(bean)
+
+@Stateless
+public class ExxampleBean{
+    @PersistenceContext(unitname = "poolname")
+    EntityManager em;
+
+    public Collection<TUsers> getAllUsers(){
+    return em.createnamedquery("tusers.findAll").getResultList();
+}
+
+}
+
+now we have to call gettall users in exampleservice in restful 
+@Inject
+exampleBean eb;
+
+@GET
+@Path("/getUSers")
+@produces(Mediatype.application_json)
+public Collection<Tusers> getUSers(){
+ 	return eb.getAllUSers();
+}
+
+------clean build and run the project------------------
+localhost:8080/ResourceApp/rest/example/getUsers
+
+
+
+=======================Now in ClientApp=========
+copy entities folder frrom resource app to client app in source packages
+
+->Interface file 
+@GET
+@Path("/GetUsers")
+@Produces(Mediatype.application_json)
+public collection<Tusers> getAllUsers();
+
+->Servlet file in html code
+    e1.getallusers();
+
+----run it on 8080 port number -----
+
+------------add Libraries in our app with cmd-----------
+ java -jar payara-micro-5.2022.2.jar --deploy MSAApp/artifact/MSAApp.war --port 8085 --addlibs mysql-connector-java-5.1.47-bin.jar --domainconfig domain.xml
+
+->now in domain.xml file 
+    <jdbc-connection-pool>
+    	datasourcename -> based on driverclass
+    	name = our pool name for eg mypool
+
+        <property name="password" value="root">
+         
+    </jdbc-connection-pool>
+
+<jdbc-resource pool-name>
+    jndi-name="jdbc/msa" //our jndi name from pool
+</jdbc-resource pool-name>
+
+<servers>
+    <resource-ref ref="jdbc/msa">
+    //or copy which is already exists in it and then change value based on our values 
+
+------------------domain changes ends---------------
+
+
+--------------------------------------finalcode with insert display search------------------
+table category = category_id,category_name
+table product = product_id,product_name,description,category_id(fk)
+
+
+setup both the project as maven archtype javaee8 
+check pom.xml version 3.2
+then pool ping 7 properties url Url user password port database driver driverClass
+make connections 
+entity from database in resourceapp , copy entity package only in client app
+name persistence file msapu
+create session bean in resourceapp
+
+in CategoryBean session bean 
+@Stateless
+public class CategoryBean {
+    @PersistenceContext(unitName= "jpapu")
+    EntityManager em;
+    
+    public Collection<Category> getCategory(){
+        return em.createNamedQuery("Category.findAll").getResultList();
+    }
+
+
+in ProductBean.java session bean
+@Stateless
+public class ProductBean {
+    @PersistenceContext(unitName="jpapu")
+    EntityManager em;
+    
+    public Collection<Product> getProducts(){
+        return em.createNamedQuery("Product.findAll").getResultList();
+    }
+    
+    public void insertProduct(String name,String description,int cid){
+        Category category = em.find(Category.class, cid);
+        Product p = new Product();
+        p.setCategoryId(category);
+        p.setDescription(description);
+        p.setProductName(name) ;
+         em.persist(p);          
+    }
+    
+   public Collection<Product> getByProductCategoryName(int id){
+       
+       Category cat = em.find( Category.class,id);
+       
+     return em.createQuery("SELECT p FROM Product p WHERE p.categoryId = :categoryId", Product.class)
+             .setParameter("categoryId", cat)
+             .getResultList();
+    } 
+    
+    
+    public Collection<Product> getByProductName(String name){
+     return em.createNamedQuery("Product.findByProductName", Product.class)
+             .setParameter("productName", name)
+             .getResultList();
+    }
+    
+    public void deleteProduct(int id){
+          Product product = em.find(Product.class, id); 
+          em.remove(product);
+    }
+
+
+
+
+then in inbuilt exampleservice 
+    @Inject CategoryBean cb;
+     @Inject ProductBean pb;
+
+    
+    @GET
+    @Path("/category")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Collection<Category> getCategory() {
+        return cb.getCategory();
+    }
+    
+    @GET
+    @Path("/product")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Collection<Product> getProducts() {
+        return pb.getProducts();
+    }
+    
+    
+      @POST
+    @Path("/product/{pname}/{description}/{cid}")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public String insertedProducts(@PathParam("pname") String pname,@PathParam("description") String description,@PathParam("cid") int cid) {
+         pb.insertProduct(pname,description,cid);
+         return "Inserted Success";
+    }
+    
+    
+    @POST
+    @Path("/productBycatName/{id}")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Collection<Product> productBycatName(@PathParam("id") int id) {
+         return pb.getByProductCategoryName(id);
+    }
+    
+    @GET
+    @Path("/productByName/{name}")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Collection<Product> getByProduct(@PathParam("name") String name) {
+         return pb.getByProductName(name);
+    }
+    
+    
+    @DELETE
+    @Path("/product/{id}")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public String deleteProducts(@PathParam("id") int id) {
+         pb.deleteProduct(id);
+         return "deleted Success";
+    }
+
+run this api as https://localhost:8080/rest/example/product
+
+
+Now in client app
+check pom.xml
+now in other packages-> src/main/resources -> creates a folder name as "META-INF" -> create
+	property file -> microprofile-config
+inside of microprofile-config file write below line which is your url of resource app and write only this line
+appURL/mp-rest/url=http://localhost:8080/external-server/rest/example/
+
+
+now creates an interface
+
+@RegisterRestClient(configKey="appURL")
+public interface categoryInterface {
+    
+    @GET
+    @Path("category")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Collection<Category> getCategory() ;
+    
+    @GET
+    @Path("product")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Collection<Product> getProducts() ;
+    
+     @GET
+    @Path("/productByName/{name}")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Collection<Product> getByProduct(@PathParam("name") String name) ;
+    
+        @POST
+    @Path("/productBycatName/{id}")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Collection<Product> productBycatName(@PathParam("id") int id) ;
+    
+      @POST
+    @Path("/product/{pname}/{description}/{cid}")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public String insertedProducts(@PathParam("pname") String pname,    	@PathParam("description") String description,@PathParam("cid") int cid) ;
+    
+
+
+
+Now creates servlet as frontend 
+ProductDisplay.java
+
+@WebServlet(name = "ProductDisplay", urlPatterns = {"/ProductDisplay"})
+public class ProductDisplay extends HttpServlet {
+
+  @Inject categoryInterface ci;
+    
+    protected void processRequest(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
+        response.setContentType("text/html;charset=UTF-8");
+        try (PrintWriter out = response.getWriter()) {
+           
+            out.println("<!DOCTYPE html>");
+            out.println("<html>");
+            out.println("<head>");
+            out.println("<title>Servlet ProductDisplay</title>");            
+            out.println("</head>");
+            out.println("<body>");
+            
+              out.println("<form  method='POST' action='http://localhost:8080/external-client/filterProduct'>");
+              out.println("<select name='categoryName'>");
+             for (Category cat : ci.getCategory()){
+                 out.println("<option value="+cat.getCategoryId()+">"+cat.getCategoryName()+" </option>");
+             }
+            out.println("</select>");
+            out.println("<input type='submit' value='filter'/>");
+            out.println("</form>");
+              out.println("<table border='1'>");
+        out.println("<tr><th>Product ID</th><th>Product Name</th><th>Description</th><th>Category Name</th></tr>");
+       
+           for (Product product : ci.getProducts()) {
+            out.println("<tr>");
+            out.println("<td>" + product.getProductId() + "</td>");
+            out.println("<td>" + product.getProductName() + "</td>");
+            out.println("<td>" + product.getDescription() + "</td>");
+            out.println("<td>" + product.getCategoryId().getCategoryName() + "</td>");
+            
+            out.println("</tr>");
+        }
+             out.println("</table>");
+        out.println("</body>");
+            out.println("</html>");
+        }
+    }
+
+
+    @Override
+    protected void doGet(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
+        processRequest(request, response);
+    }
+
+
+----------
+
+
+InsertProduct.java
+
+@WebServlet(name = "InsertProduct", urlPatterns = {"/InsertProduct"})
+public class InsertProduct extends HttpServlet {
+    
+    @Inject categoryInterface ci;
+    
+    protected void processRequest(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
+        response.setContentType("text/html;charset=UTF-8");
+        try (PrintWriter out = response.getWriter()) {
+            /* TODO output your page here. You may use following sample code. */
+            out.println("<!DOCTYPE html>");
+            out.println("<html>");
+            out.println("<head>");
+            out.println("<title>Servlet InsertProduct</title>");            
+            out.println("</head>");
+            out.println("<body>");
+            out.println("<form  method='POST' action='http://localhost:8080/external-client/InsertProduct'>");
+            out.println("<input type='text' name='productName' id='productName'/>");
+            out.println("<input type='text' name='description' id='productName'/>");
+            out.println("<select name='categoryName'>");
+             for (Category cat : ci.getCategory()){
+                 out.println("<option value="+cat.getCategoryId()+">"+cat.getCategoryName()+" </option>");
+             }
+            out.println("</select>");
+            
+            out.println("<input type='submit' value='Insert Product' />");
+            out.println("</form>");
+            
+            out.println("</body>");
+            out.println("</html>");
+        }
+    }
+
+    @Override
+    protected void doGet(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
+        processRequest(request, response);
+    }
+
+    @Override
+    protected void doPost(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
+        
+        String pn = request.getParameter("productName");
+        String des = request.getParameter("description");
+        int cn = Integer.parseInt( request.getParameter("categoryName"));
+
+        ci.insertedProducts(pn, des, cn);
+        
+        response.sendRedirect("http://localhost:8080/external-client/ProductDisplay");
+        
+        processRequest(request, response);
+    }
+
+   
+    @Override
+    public String getServletInfo() {
+        return "Short description";
+    }// </editor-fold>
+
+----------
+
+FilterProduct.java
+
+@WebServlet(name = "filterProduct", urlPatterns = {"/filterProduct"})
+public class filterProduct extends HttpServlet {
+
+    @Inject categoryInterface ci;
+    protected void processRequest(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
+        response.setContentType("text/html;charset=UTF-8");
+        try (PrintWriter out = response.getWriter()) {
+            /* TODO output your page here. You may use following sample code. */
+            out.println("<!DOCTYPE html>");
+            out.println("<html>");
+            out.println("<head>");
+            out.println("<title>Servlet filterProduct</title>");            
+            out.println("</head>");
+            out.println("<body>");
+            out.println("<table border='1'>");
+             out.println("<tr><th>Product ID</th><th>Product Name</th><th>Description</th><th>Category Name</th></tr>");
+       int pn = Integer.parseInt(request.getParameter("categoryName"));
+           for (Product product : ci.productBycatName(pn)) {
+            out.println("<tr>");
+            out.println("<td>" + product.getProductId() + "</td>");
+            out.println("<td>" + product.getProductName() + "</td>");
+            out.println("<td>" + product.getDescription() + "</td>");
+            out.println("<td>" + product.getCategoryId().getCategoryName() + "</td>");
+            
+            out.println("</tr>");
+        }
+             out.println("</table>");
+            out.println("</body>");
+            out.println("</html>");
+        }
+    }
+  --------------------------------OSABINALL----------------
+    ----------kashab-----------
+open cmd into the C:\sqlite3(set the path into the env)
+then close it cmd
+
+then open cmd from windows
+
+write command for pandas, numpy, matplotlib
+
+->py
+->pip -V
+->pip list (for check package installed or not)
+->pip install pandas
+->pip install numpy
+->pip install matplotlib
+
+write code in python file
+	|
+	|
+	|
+Iterables:-
+
+=============================================
+
+1)List:
+fruits=["apple","apple","mango","kiwi"]
+
+print(fruits)
+print(fruits[1])
+
+#Traverse in fruits
+for i in range(0,3):
+    print(i,":",fruits[i])
+
+for i in fruits:
+    print(i)
+
+#functions of list :
+
+1)append:
+-------------------
+fruits.append("banana")
+for i in fruits:
+    print(i)
+
+2)pop : 
+-------------------
+x=fruits.pop()
+print(x)
+print(fruits)
+
+3)del : 
+-------------------
+del fruits[1]
+print(fruits)
+
+4)insert :
+-------------------
+fruits.insert(0,"banana")
+print(fruits)
+
+5)sort : 
+-------------------
+fruits.sort()
+print(fruits)
+
+6)len : 
+-------------------
+x=len(fruits)
+print(x)
+
+7)count: 
+-------------------
+x=fruits.count("apple")
+print(x)
+-------------------
+Aggregate func :
+1)sum()
+2)max()
+3)min()
+
+#Find average
+n=[10,20,30,40,50]
+x=sum(n)
+z=len(n)
+avg=x/z
+print(avg)
+-------------------
+2D list : List of list
+data=[
+    [10,20,30],
+    [40,50,60],
+    [70,80,90]
+]
+#print(data[1])
+#print(data[1][2])
+
+for i in data:
+    for j in i:
+        print(j,end=" ")
+    print()
+-------------------
+#user Input in a list :
+
+x=[]
+n=int(input("Enter no of data = "))
+for i in range(0,n):
+    z=int(input("Enter data = "))
+    x.append(z)
+
+for i in x:
+    print(i)
+-------------------
+#2d list user input
+
+x=[]
+r=int(input("Enter rows = "))
+c=int(input("Enter cols = "))
+
+for i in range(0,r):
+    temp=[]
+    for j in range(0,c):
+        z=int(input("Enter value = "))
+        temp.append(z)
+    x.append(temp)
+
+for i in x:
+    for j in i:
+        print(j,end=" ")
+    print()
+=============================================
+
+
+
+
+2)Dictionary:
+stud={
+    "sid":101,
+    "sname":"Shiv",
+    "gender":"Female",
+    "marks":{
+            "sci":100,
+            "maths":50,
+            "gk":0,
+       }
+}
+#print(stud["gender"])
+#print(stud)
+
+#traverse on dictionary :
+#for i in stud:
+#    print(i,":",stud[i])
+
+#print(stud["marks"]["sci"])
+
+#traverse on marks:
+for i in stud["marks"]:
+    print(i,":",stud["marks"][i])
+
+#Find total marks:
+totmarks=0
+for i in stud["marks"]:
+    totmarks=totmarks+stud["marks"][i]
+stud["totmarks"]=totmarks
+for i in stud:
+    print(i,":",stud[i])
+
+#To add data on dictionary
+#name_dict[key]=value
+#stud["course"]="BCA"
+#stud["marks"]["ss"]=90
+#print(stud)
+
+#To delete in dictionary
+stud.pop("dd")
+print(stud["phone"][1])
+
+for i in stud:
+    print(i,":",stud[i])
+
+user Input dictionary
+stud={}
+n=int(input("Enter no of data = "))
+
+for i in range(0,n):
+    key=input("Enter key = ")
+    value=input("Enter value = ")
+
+    stud[key]=value
+
+for i in stud:
+    print(i,":",stud[i])
+
+=>Dictionary with List:
+stud=[
+    {
+        "sid":101,
+        "sname":"megha",
+        "gender":"female",
+        "marks":98
+    },
+    {
+        "sid":102,
+        "sname":"rutu",
+        "gender":"female",
+        "marks":76
+    },
+    {
+        "sid":103,
+        "sname":"krishi",
+        "gender":"female",
+        "marks":78
+    }
+]
+
+print(stud[0]["sname"])
+print(stud[0])
+
+for i in stud[0]:
+    print(i,":",stud[0][i])
+
+print(stud[0]["marks"]+stud[1]["marks"]+stud[2]["marks"])
+
+=============================================
+
+
+3)tuples:
+
+thistuple = ("apple", "banana", "cherry")
+print(thistuple)
+
+#access tuple items:
+print(thistuple[1])
+print(thistuple[-1]) //it prints last item of tuple
+
+Range of Indexing(slicing):
+print(thistuple[2:5])  
+#This will return the items from position 2 to 5.
+#Remember that the first item is position 0,
+#and note that the item in position 5 is NOT included
+print(thistuple[:4])
+print(thistuple[2:])
+print(thistuple[-4:-1])
+if "apple" in thistuple:
+  print("Yes, 'apple' is in the fruits tuple")
+
+user input----------
+x=()
+y=[]
+n=int(input("ENter value:"))
+for i in range(0,n):
+    val=input("Enter value:")
+    y.append(val)
+x=tuple(y)
+
+print(x)'''
+x=(1,2,3,4)
+print(x)
+
+'''to update in tuple--------
+x = ("apple", "banana", "cherry")
+y = list(x)
+y[1] = "kiwi"
+x = tuple(y)
+
+print(x)
+
+add tuple to a tuple---------
+
+thistuple = ("apple", "banana", "cherry")
+y = ("orange",)
+thistuple+= y
+
+print(thistuple)'''
+
+=============================================
+
+4)sets:
+myset={"apple","mango","orange","apple"}
+myset2={"kiwi","pineapple"}
+print(myset)
+for x in myset:
+    print(x)
+print("orange" in myset)
+myset.add("kiwi")
+myset.update(myset2)
+print(myset)
+
+
+*******************************************
+
+Pandas:
+'''
+pip install pandas.
+there are two types of pandas.
+1)Series: for 1d array
+2)DataFrame:it is used for 2D array.
+    functions:==
+    1)df.head():prints top 5 record.
+        syntax:
+        df.head(number)
+    2)df.tail():prints bottom 5 record.
+    3)df.index:
+        it displays only index
+        RangeIndex(start=0, stop=6, step=1)
+    4)shapes:it defines total number of rows and columns.
+        1st is total no of rows.
+        2nd is total no of columns.
+    5)colums:it displays only columns name.
+        i.e, headers
+    6)size:it multiply total number of rows and columns.
+    7)dtypes:it displays schema of all columns.
+        
+'''
+import pandas as pd
+
+'''data=pd.Series([1,2,'megha',4,5,6],index=['a','b','c','d','e','f'])
+print(data[-3:])'''
+data=pd.Series({'a':1,'b':2,'c':3,'d':4},index=['b','d','a','c'])
+print(data)
+
+
+
+how to create DataFrames
+import pandas as pd
+
+df=pd.DataFrame([
+        [1,'megha','HR',30000],
+        [2,'shivangi','sales',31000]
+    ],
+    columns=['eid','ename','Des','salary']
+            )
+print(df.ename)
+
+how to read csv  file using pandas:
+	df=pd.read_csv("student.csv")
+#print(df.head(3))
+#print(df.tail(3))
+#print(df[["per","name"]])
+#print(df.index)
+#print(df.shape)
+#print(df.columns)
+#print(df.size)
+print(df.dtypes)
+
+how to create new csv file with dataframe
+import pandas as pd
+df=pd.DataFrame([
+        [1,'megha','HR',30000],
+        [2,'shivangi','sales',31000]
+    ],
+    columns=['eid','ename','Des','salary']
+            )
+print(df.ename)
+with open("employee2.csv",'w',newline="") as f:
+    df.to_csv(f)
+
+find minimum and maximum
+import pandas as pd
+
+
+'''data=pd.read_csv('fs.csv')
+df=pd.DataFrame(data)
+s1=data.m1
+s2=data.m2
+
+print('maximum marks in subject1:',s1.max())
+print('maximum marks in subject2:',s2.max())
+
+#minimum marks==
+
+print('maximum marks in subject1:',s1.min())
+print('maximum marks in subject2:',s1.min())'''
+data={'sid':[201,202,203,204],
+      'sname':["apple","mango","orange","chiku"],
+      'sem':[5,2,3,1],
+      'age':[11,12,13,14]}
+df=pd.DataFrame(data)
+print(df)
+
+
+Insert data in database file using pandas
+
+import sqlite3 as s
+import pandas as pd
+import csv as c
+
+try:
+    db=s.connect("C:\sqlite3\employee.db")
+    print("database connected")
+    cur=db.cursor()
+
+    qry="insert into employee values(?,?,?)"
+    id1=int(input("Enter Employee Id:"))
+    ename=input("ENter emp name:")
+    price=int(input("Enter Price:"))
+
+    rec=cur.execute(qry,(id1,ename,price))
+    print("record inserted")
+
+    sel="select * from employee"
+    allrec=cur.execute(sel)
+    with open("emptocsv.csv","w",newline="") as obj:
+        fobj=c.writer(obj)
+        fobj.writerow(['eid','ename','salary'])
+        fobj.writerows(allrec)
+    print("csv created")
+
+
+
+finally:
+    db.commit()
+    db.close()
+------------------------------------------
+
+Update data in database file using pandas
+
+import sqlite3 as s
+import pandas as pd
+import csv as c
+
+try:
+    
+    db = s.connect("C:\\sqlite3\\employee.db")  
+    print("Database connected")
+    cur = db.cursor()
+
+    
+    qry = "UPDATE employee SET name = ?, price = ? WHERE id = ?"
+    
+    
+    id1 = int(input("Enter Employee Id:"))
+    ename = input("Enter employee name:")
+    price = int(input("Enter Price:"))
+
+    rec = cur.execute(qry, (ename, price, id1))  
+    print("Record updated")
+
+    sel = "SELECT * FROM employee"
+    allrec = cur.execute(sel)
+
+    with open("emptocsv.csv", "w", newline="") as obj:
+        fobj = c.writer(obj)
+        fobj.writerow(['eid', 'ename', 'salary'])
+        fobj.writerows(allrec)
+    
+    print("CSV created")
+
+finally:
+    db.commit()
+    db.close()
+-------------------------------
+
+Delete data in database file using pandas
+    
+import sqlite3 as s
+import pandas as pd
+import csv as c
+
+try:
+    
+    db = s.connect("C:\\sqlite3\\employee.db")  
+    print("Database connected")
+    cur = db.cursor()
+
+    
+    qry = "DELETE FROM employee WHERE id = ?"
+    
+    
+    id1 = int(input("Enter Employee Id to delete : "))
+
+    rec = cur.execute(qry, (id1,))  
+    print("Record deleted")
+
+    sel = "SELECT * FROM employee"
+    allrec = cur.execute(sel)
+
+    with open("emptocsv.csv", "w", newline="") as obj:
+        fobj = c.writer(obj)
+        fobj.writerow(['eid', 'ename', 'salary'])
+        fobj.writerows(allrec)
+    
+    print("CSV created")
+
+finally:
+    db.commit()
+    db.close()
+
+============================
+
+Matplotlib in py
+
+open cmd into the C:\sqlite3(set the path into the env)
+
+import pandas as pd
+import matplotlib.pyplot as plot
+import sqlite3 as s
+import csv as c
+'''
+data = pd.read_csv("C:\sqlite3\Matplotlib\chart.csv")
+#print(data)
+#data.plot.line(x="name",y="salary",title="emp sheet",color="red")
+#data.plot.bar(x="name",y="salary",title="emp sheet",color="red")
+#data.plot.hist(x="name",y="salary",title="emp sheet",color="red")
+data.plot.pie(x="name",y="salary",title="emp sheet")
+plot.xlabel("name")
+plot.ylabel("salary")
+plot.show()
+'''
+
+try:
+    db=s.connect("C:\sqlite3\main.db")
+    print("---db connect---")
+    cur=db.cursor()
+    print("cursor created")
+    rec=cur.execute("select * from tbldemo")
+    fetch=rec.fetchall()
+
+    with open("charts.csv","w",newline="") as f:
+        fobj=c.writer(f)
+        fobj.writerow(["no","bookname","price"])
+        fobj.writerows(fetch)
+
+    print("csv created")
+    data=pd.read_csv("charts.csv")
+    print(data)
+    data.plot.pie(x="bookname",y="price",title="book sheet")
+    plot.xlabel("bookname")
+    plot.ylabel("price")
+    plot.show()
+    
+except:
+    print("===Something went wrong===")
+
+finally:
+    db.commit()
+    db.close()
+====================================
+
+matplot with sqlite3
+try:
+    db=s.connect("C:\sqlite3\main.db")
+    print("--database connected--")
+    cur=db.cursor()
+    print("cursor created")
+    rec=cur.execute("select * from tbldemo")
+    fetch=rec.fetchall()
+    with open("charts.csv","w",newline="") as f:
+        fobj=c.writer(f)
+        fobj.writerow(["no","name","price"])
+        fobj.writerows(fetch)
+
+    print("csv created")
+    data=pd.read_csv("charts.csv")
+    #print(data)
+    data.plot(x="name",y="price",title="employee sheet",color="red")
+    #data.plot.line(x="ename",y="salary",title="employee sheet",color="red")
+    #data.plot.hist(x="ename",y="salary",title="employee sheet",color="red")
+    plot.xlabel("Employee Id")
+    plot.ylabel("EMployee Salary")
+    plot.show()
+except:
+    print("==something went wrong==")
+finally:
+    db.commit()
+    db.close()
+
+
+
+*****************************************
+
+
+NumPy in python
+
+
+import numpy as np
+'''
+arange(): is used to create single series.
+    for ex.: array = np.arange(starting number, ending number)
+    it prints series from starting number to ending number -1.
+
+reshape(): is used to create ndim array.
+    for ex.: array = np.arange().reshape(row,columns)
+    it requires two parameters 1st is total number of rows and
+    2nd is total number of columns.
+
+
+#arr = np.arange(11,15).reshape(2,2)
+#arr = np.zeros(4)
+#arr = np.zeros((2,4))
+#arr = np.ones((3,4))
+#print(arr)
+arr = np.array([[1,2,3,4],[5,6,7,8],[9,10,11,12]])
+print(arr.ndim)
+print(arr.size)
+print(arr.shape)
+print(arr.dtype)
+
+===> Slicing in 1D array
+
+arr = np.array([10,20,30,40,50,60,70])
+print(arr[1:3])#[20 30]
+print(arr[1:6:2])#[20 40 60]
+print(arr[-1:-3:-1])#[70 60]
+print(arr[::2])#[10 30 50 70]
+print(arr[::-1])#[70 60 50 40 30 20 10]
+
+===>slicing in 2D array
+
+arr=np.array([[15,16,17],[25,26,27],[35,36,37],[45,46,47]])
+print(arr[1,])#[25 26 27]
+print(arr[:,1])#[16 26 36 46]
+print(arr[1:3,1:3])#[[26 27],[36 37]]
+print(arr[1:3,])#[[25 26 27],[35 36 37]]
+print(arr[:,1:3])#[[16 17],[26 27],[36 37],[46 47]]
+print(arr[1:3,1])#[26 36]
+print(arr[1:3,:1])#[[25],[35]]
+
+===>arithmetic operators on numpy
+1)Addition(+)
+2)SUb(-)
+3)mul(*)
+4)matrix mul(@)
+5)div(/)
+6)expontiation(**)
+7)module(%)
+8)transpose()
+
+a1=np.array([[1,2],
+             [3,4]])
+a2=np.array([[11,12],
+            [13,14]])
+#a2=np.array([11,12,13,14,15])
+
+#a3=a1+a2
+#a3=a2-a1
+#a3=a1*a2
+#a3=a1/a2
+#a3=a2**a1
+#a3=a2 % a1
+#a3=a1@a2
+#a3=a1.transpose()
+#print(a1.transpose())
+#print(a3)
+
+===>sorting
+to sort array in numpy sort() is used
+1)np.sort():
+    it will sort elements.
+    it  generates another copy of array.
+    by default it will sort elements in row wise.
+    it you want to sort in elements in column wise then axis is used.
+    axis property requires two boolean values either 1 or 0.
+    if axis=0: then it will sorts elements in column wise.
+    if axis=1: then it will sorts elements in row wise i.e. by default.
+2)np.argsort():
+    it will sort elements too.
+    bt it display sorted element's index numbers.
+3)arrayName.sort():
+    it will sort elements.
+    it not generate another copy of array.
+    by default it will sort elements in row wise.
+    it you want to sort in elements in column wise then axis is used.
+    axis property requires two boolean values either 1 or 0.
+    if axis=0: then it will sorts elements in column wise.
+    if axis=1: then it will sorts elements in row wise i.e. by default.
+'''
+
+x=np.array([[12,11,15],[21,25,20],[18,27,16]]) 
+#y=np.sort(x,axis=0)
+#y=np.argsort(x,axis=0)
+x.sort()
+print(x)
+
+
+***************************************************
+
+Python With OOP
+**user-defined function in python
+    def add(megha,a,b):
+        c=a+b
+        print(c)
+    def sub(megha,a,b):
+        c=a-b
+        print(c)
+    def mul(megha,a,b):
+        c=a*b
+        print(c)
+    def div(megha,a,b):
+        c=a/b
+        print(c)
+    
+
+add(a,b)
+sub(a,b)
+mul(a,b)
+div(a,b)
+
+
+user input and class
+class add:
+    def add(megha,a,b):
+        c=a+b
+        print(c)
+    def sub(megha,a,b):
+        c=a-b
+        print(c)
+    def mul(megha,a,b):
+        c=a*b
+        print(c)
+    def div(megha,a,b):
+        c=a/b
+        print(c)
+    
+#to make object of a class 
+a1=add()
+a=int(input("Enter a:"))
+b=int(input("Enter b:"))
+a1.add(a,b)
+a1.sub(a,b)
+a1.mul(a,b)
+a1.div(a,b)
+==================================
+constructor
+'''
+constructor:
+    constructor are created by _init_() function.
+    constructor is invoke automatically when we create object of class.
+    constructor is used to assign a values.
+    
+    there are two types of constructors:
+    1)default constructor:
+        class emp:
+    def _init_(self):
+        self.id=101
+        self.name='apple'
+        self.salary=20000
+        
+    def display(self):
+        print("sid = ",self.id)
+        print("sname = ",self.name)
+        print("salary = ",self.salary)
+
+
+e=emp()
+e.display()
+
+    2)parameterize constructor:
+    class emp:
+    def _init_(self,sid,sname,sal):
+        self.id=sid
+        self.name=sname
+        self.salary=sal
+        
+    def display(self):
+        print("sid = ",self.id)
+        print("sname = ",self.name)
+        print("salary = ",self.salary)
+
+sid=int(input("Enter sid :"))
+sname=input("Enter sname:")
+salary=int(input("Enter salary:"))
+e=emp(sid,sname,salary)
+e.display()
+
+'''
+class emp:
+    def _init_(self):
+        self.id=101
+        self.name='apple'
+        self.salary=20000
+        
+    def display(self):
+        print("sid = ",self.id)
+        print("sname = ",self.name)
+        print("salary = ",self.salary)
+e=emp()
+e.display()
+
+OOP  with ierables
+**example 1:
+class emp:
+    def _init_(self,eid,ename,sal):
+        self.emp={}
+        self.emp["eid"]=eid
+        self.emp["ename"]=ename
+        self.emp["sal"]=sal
+
+    def display(self):
+        for i in self.emp:
+            print(i,":",self.emp[i])
+
+e=emp(101,'apple',2000)
+e.display()
+
+**example 2:
+class emp:
+    def _init_(self,eid,ename,sal):
+        self.emp={}
+        self.emp["eid"]=eid
+        self.emp["ename"]=ename
+        self.emp["sal"]=sal
+
+    def display(self):
+        for i in self.emp:
+            print(i,":",self.emp[i])
+
+eid=int(input("Enter eid:"))
+ename=input("Enter ename:")
+salary=int(input("Enter salary:"))
+e=emp(eid,ename,salary)
+e.display()
+------------------------------------------
+Relationships:
+
+====>inheritance(is a)
+class parent:
+    def getData(self):
+        print("parent class method called")
+
+class child(parent):
+    def PrintData(self):
+        print("child class method called")
+
+c=child()
+c.PrintData()
+c.getData()
+
+class teacher:
+    def _init_(self,tid,tname,sal):
+        print("parent class constructor called")
+        self.tid=tid
+        self.tname=tname
+        self.salary=sal
+        
+    def getData(self):
+        print("tid =",self.tid,"tname =",self.tname,"salary =",self.salary)
+
+class student(teacher):
+    def getStud(self,sid,sname,course):
+        print("sid =",sid,"sname =",sname,"course =",course)
+
+tid=int(input("Enter Tid:"))
+tname=input("Enter tname:")
+salary=input("Enter Salary:")
+sid=int(input("Enter sid:"))
+sname=input("Enter sname:")
+course=input("Enter Course:")
+s=student(tid,tname,salary)
+s.getData()
+s.getStud(sid,sname,course)
+---------------------------------------
+===>containership(has a)
+
+class parent:
+    def printParent(self):
+        print("parent class called")
+
+class child:
+    p=parent()
+    def printChildData(self):
+        print("child class called")
+
+c=child()
+c.printChildData()
+c.p.printParent()'''
+
+class teacher:
+    def getData(self,tid,tname):
+        self.tid=tid
+        self.tname=tname
+
+    def printData(self):
+        print("tid=",self.tid,"tname=",self.tname)
+
+class student:
+    def _init_(self):
+        self.t=teacher()
+
+    def getStud(self,sid,sname,tid,tname):
+        self.sid=sid
+        self.sname=sname
+        self.t.getData(tid,tname)
+
+    def printStud(self):
+        self.t.printData()
+        print("sid=",self.sid,"sname=",self.sname)
+
+s=student()
+s.getStud(101,'apple',1,'abc')
+s.printStud()
+
+========================Extra===================
+//dictionary with user inpute
+student=[]
+while True:
+    print("Press 1 to Add Student")
+    print("Press 2 to Calculate Total Marks and Grade")
+    print("Press 3 to Display A Grade Students")
+    print("Press 4 to Display B and C Grade Students")
+    print("Press 5 to Display All Students")
+    print("Press 6 to Exit")
+
+    stud={}
+    n = int(input("Enter Your Choice==="))
+    if n==1:
+        sid=int(input("Enter Sid:"))
+        sname=input("Enter Student Name:")
+        marks1=int(input("Enter Marks1:"))
+        marks2=int(input("Enter Marks2:"))
+        marks3=int(input("Enter Marks3:"))
+
+        stud["sid"]=sid
+        stud["sname"]=sname
+        stud["marks1"]=marks1
+        stud["marks2"]=marks2
+        stud["marks3"]=marks3
+
+        for i in stud:
+            print(i,":",stud[i])
+        student.append(stud)
+        
+    elif n==2:
+        print("Total marks and Percentage")
+        for i in student:
+            totalmarks=0
+            totalmarks=totalmarks + i["marks1"] + i["marks2"] + i["marks3"]
+            print("TotalMarks",totalmarks)
+            
+            percentage=(totalmarks/3)
+            print("Percentage",percentage)
+        
+            if percentage>80:
+                grade="A Grade"
+            elif percentage>70:
+                grade="B Grade"
+            elif percentage>60:
+                grade="C Grade"
+            elif percentage>50:
+                grade="D Grade"
+            else:
+                grade="E Grade"
+                
+            print("Grade",grade)
+            i["Grade"]=grade
+    elif n==3:
+        print("A Grade Students")
+        for i in student:
+            if i["Grade"]=="A Grade":
+                print(i)
+    elif n==4:
+        print("B and C Grade Students")
+        for i in student:
+            if i["Grade"]=="B Grade" or i["Grade"]=="C Grade":
+                print(i)
+            
+    elif n==5:
+        for i in student:
+            print(i)
+    else:
+        break
+
+//
+
+---------------------------------------------------Tigermemon-----------------------------
+==>>List Function:
+my_list = [1, 2, 3, 4]  # A list of integers
+my_list2 = ["apple", "banana", "cherry"]  # A list of strings
+my_list3 = [1, "apple", 3.14]  # A mixed list
+
+userinput 
+my_list = []  # Start with an empty list
+
+# Ask for user input
+n = int(input("How many elements do you want to add? "))
+
+# Loop to take 'n' user inputs
+for i in range(n):
+    element = input(f"Enter element {i+1}: ")
+    my_list.append(element)  # Add the input to the list
+
+print("The list is:", my_list)
+
+append(item): Adds an item to the end of the list.
+extend(iterable): Extends the list by appending elements from another iterable.
+insert(index, item): Inserts an item at a specified index.
+remove(item): Removes the first occurrence of an item.
+pop([index]): Removes and returns the item at the given index (or the last item if index is not specified).
+clear(): Removes all items from the list.
+index(item, [start, [end]]): Returns the index of the first occurrence of an item.
+count(item): Returns the number of occurrences of an item in the list.
+sort(key=None, reverse=False): Sorts the list in ascending order (can specify custom sorting criteria).
+reverse(): Reverses the elements of the list in place.
+copy(): Returns a shallow copy of the list.
+len(list): Returns the number of items in the list.
+max(list): Returns the maximum value in the list.
+min(list): Returns the minimum value in the list.
+sum(list): Returns the sum of all elements in the list (for numeric lists).
+list(): Converts an iterable (e.g., tuple, string) into a list.
+
+==>>Tuple function
+
+my_tuple = (1, 2, 3)  # A tuple of integers
+my_tuple2 = ("apple", "banana", "cherry")  # A tuple of strings
+my_tuple3 = (1, "apple", 3.14)  # A mixed tuple
+
+count(item): Returns the number of times an item appears in the tuple.
+index(item, [start, [end]]): Returns the index of the first occurrence of the specified item.
+Built-in Functions for Tuples:
+len(tuple): Returns the number of elements in the tuple.
+max(tuple): Returns the maximum value in the tuple (for comparable elements).
+min(tuple): Returns the minimum value in the tuple (for comparable elements).
+sum(tuple): Returns the sum of all elements in the tuple (for numeric elements).
+tuple(iterable): Converts an iterable (e.g., list, string) into a tuple.
+any(tuple): Returns True if at least one element in the tuple is True.
+all(tuple): Returns True if all elements in the tuple are True.
+sorted(tuple): Returns a sorted list of the tuple's elements.
+enumerate(tuple): Returns an iterator that produces pairs of index and value for each element in the tuple.
+    
+==>>Dictionary
+my_dict = {
+    "name" : "Harsh",
+    "age":25,
+    "city":"NY"
+    }
+
+print(my_dict)
+print(my_dict["name"])
+my_dict["name"]="Choksi"
+my_dict.pop("age")
+print(my_dict)
+
+'''
+
+user_info = {}
+
+name = input("Enter Name")
+age = int(input("Enter Age"))
+city = input("Enter City")
+
+user_info["name"]= name
+user_info["age"]= age
+user_info["city"]= city
+
+print(user_info)
+
+dict.get(key, [default]): Returns the value for the specified key. If the key is not found, returns the optional default value (or None if default is not provided).
+dict.keys(): Returns a view object that displays all the keys in the dictionary.
+dict.values(): Returns a view object that displays all the values in the dictionary.
+dict.items(): Returns a view object of the dictionary’s key-value pairs as tuples.
+dict.pop(key, [default]): Removes and returns the value for the specified key. If the key is not found, returns the default value (or raises a KeyError if default is not provided).
+dict.popitem(): Removes and returns the last key-value pair inserted into the dictionary (since Python 3.7).
+dict.update([other]): Updates the dictionary with the key-value pairs from another dictionary or an iterable of key-value pairs.
+dict.clear(): Removes all items from the dictionary.
+dict.copy(): Returns a shallow copy of the dictionary.
+dict.setdefault(key, [default]): Returns the value for the specified key. If the key is not present, inserts the key with a default value and returns the default.
+dict.fromkeys(iterable, [value]): Creates a new dictionary with keys from the iterable and values set to the specified value (defaults to None).
+Built-in Functions for Dictionaries:
+len(dict): Returns the number of key-value pairs in the dictionary.
+sorted(dict): Returns a sorted list of the dictionary's keys.
+any(dict): Returns True if any key in the dictionary is true (i.e., not 0, False, or empty).
+all(dict): Returns True if all keys in the dictionary are true
+
+==>>Set
+myset={"apple","mango","orange","apple"}
+myset2={"kiwi","pineapple"}
+print(myset)
+for x in myset:
+    print(x)
+print("orange" in myset)
+myset.add("kiwi")
+myset.update(myset2)
+print(myset)
+
+set.add(item): Adds an item to the set.
+set.remove(item): Removes the specified item from the set. Raises KeyError if the item is not found.
+set.discard(item): Removes the specified item if it exists in the set. Does nothing if the item is not found.
+set.pop(): Removes and returns an arbitrary element from the set. Raises KeyError if the set is empty.
+set.clear(): Removes all elements from the set.
+set.copy(): Returns a shallow copy of the set.
+set.update(iterable): Adds all elements from the given iterable to the set.
+set.union(*sets): Returns the union of the set and all specified sets (all unique elements from all sets).
+set.intersection(*sets): Returns the intersection of the set and all specified sets (common elements in all sets).
+set.intersection_update(*sets): Updates the set to keep only the elements found in it and all specified sets.
+set.difference(*sets): Returns the difference between the set and all specified sets (elements in the set that are not in the other sets).
+set.difference_update(*sets): Updates the set by removing elements found in all specified sets.
+set.symmetric_difference(set): Returns the symmetric difference between the set and another set (elements that are in either set, but not in both).
+set.symmetric_difference_update(set): Updates the set with the symmetric difference between the set and another set.
+set.isdisjoint(set): Returns True if the set has no common elements with the other set.
+set.issubset(set): Returns True if the set is a subset of another set.
+set.issuperset(set): Returns True if the set is a superset of another set.
+Built-in Functions for Sets:
+len(set): Returns the number of elements in the set.
+max(set): Returns the maximum element in the set.
+min(set): Returns the minimum element in the set.
+sum(set): Returns the sum of all elements in the set (for numeric sets).
+sorted(set): Returns a sorted list of the set's elements.
+any(set): Returns True if any element in the set is true.
+all(set): Returns True if all elements in the set are true.
+
+==>>String
+str = "hello world"
+str = str.capitalize()
+print(str)
+
+str.capitalize(): Capitalizes the first character of the string.
+str.lower(): Converts all characters in the string to lowercase.
+str.upper(): Converts all characters in the string to uppercase.
+str.title(): Converts the first character of each word to uppercase.
+str.strip(): Removes leading and trailing whitespace from the string.
+str.lstrip(): Removes leading whitespace from the string.
+str.rstrip(): Removes trailing whitespace from the string.
+str.split([sep[, maxsplit]]): Splits the string into a list based on the specified separator.
+str.join(iterable): Joins elements of an iterable into a single string, separated by the string.
+str.replace(old, new[, count]): Replaces occurrences of a substring with another substring.
+str.find(sub[, start[, end]]): Returns the lowest index of the substring if found, otherwise returns -1.
+str.rfind(sub[, start[, end]]): Returns the highest index of the substring if found, otherwise returns -1.
+str.index(sub[, start[, end]]): Returns the lowest index of the substring if found, otherwise raises a ValueError.
+str.rindex(sub[, start[, end]]): Returns the highest index of the substring if found, otherwise raises a ValueError.
+str.count(sub[, start[, end]]): Returns the number of occurrences of a substring.
+str.startswith(prefix[, start[, end]]): Returns True if the string starts with the specified prefix.
+str.endswith(suffix[, start[, end]]): Returns True if the string ends with the specified suffix.
+str.isalpha(): Returns True if all characters in the string are alphabetic.
+str.isdigit(): Returns True if all characters in the string are digits.
+str.isalnum(): Returns True if all characters in the string are alphanumeric.
+str.islower(): Returns True if all characters in the string are lowercase.
+str.isupper(): Returns True if all characters in the string are uppercase.
+str.isspace(): Returns True if all characters in the string are whitespace.
+str.swapcase(): Converts uppercase characters to lowercase and vice versa.
+str.capitalize(): Capitalizes the first character of the string.
+str.zfill(width): Pads the string on the left with zeros to fill the specified width.
+
+==>>OOP
+
+=>Inhertitance
+class Animal:
+    def speak(self):
+        return "Animal speaks"
+
+class Dog(Animal):
+    def bark(self):
+        return "Dog barks"
+
+class Cat(Animal):
+    def meow(self):
+        return "Cat meows"
+
+dog = Dog()
+cat = Cat()
+
+print(dog.speak())
+print(dog.bark())
+print(cat.speak())
+print(cat.meow())
+
+
+=>oprator overloading
+
+class Point:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+
+    def __add__(self, other):
+        return Point(self.x + other.x, self.y + other.y)
+
+    def __sub__(self, other):
+        return Point(self.x - other.x, self.y - other.y)
+
+    def __str__(self):
+        return f"({self.x}, {self.y})"
+
+point1 = Point(2, 3)
+point2 = Point(5, 7)
+
+point3 = point1 + point2
+point4 = point1 - point2
+
+print(point3)
+print(point4)
+
+==>>Matplotlib
+
+=>lineChart
+import matplotlib.pyplot as plt
+
+data = pd.read_csv('data.csv')
+
+plt.plot(data['x_column'], data['y_column'])
+plt.xlabel('X-axis Label')
+plt.ylabel('Y-axis Label')
+plt.title('Line Chart Example')
+plt.show()
+
+
+=>barChart
+import pandas as pd
+import matplotlib.pyplot as plt
+
+data = pd.read_csv('data.csv')
+
+plt.bar(data['x_column'], data['y_column'])
+plt.xlabel('X-axis Label')
+plt.ylabel('Y-axis Label')
+plt.title('Bar Chart Example')
+plt.show()
+
+
+=>scatterplot
+import pandas as pd
+import matplotlib.pyplot as plt
+
+data = pd.read_csv('data.csv')
+
+plt.scatter(data['x_column'], data['y_column'])
+plt.xlabel('X-axis Label')
+plt.ylabel('Y-axis Label')
+plt.title('Scatter Plot Example')
+plt.show()
+
+
+==>>Pandas
+
+import pandas as pd
+
+data = pd.read_csv('data.csv')
+print(data.head())
+
+filtered_data = data[data['column_name'] > 10]
+print(filtered_data)
+
+grouped_data = data.groupby('category_column').mean()
+print(grouped_data)
+
+
+==>>Numpy
+
+import numpy as np
+
+# Create a 1D array
+array1d = np.array([1, 2, 3, 4, 5])
+print("1D Array:")
+print(array1d)
+
+# Create a 2D array
+array2d = np.array([[1, 2, 3], [4, 5, 6]])
+print("\n2D Array:")
+print(array2d)
+
+# Perform basic operations
+array_sum = np.sum(array1d)
+array_mean = np.mean(array1d)
+array_square = array1d ** 2
+
+print("\nSum of 1D Array:", array_sum)
+print("Mean of 1D Array:", array_mean)
+print("Square of 1D Array:")
+print(array_square)
+
+# Matrix multiplication
+matrix1 = np.array([[1, 2], [3, 4]])
+matrix2 = np.array([[5, 6], [7, 8]])
+matrix_product = np.dot(matrix1, matrix2)
+
+print("\nMatrix Product:")
+print(matrix_product)
+
+# Accessing elements
+element = array2d[1, 2]
+print("\nElement at row 1, column 2 of 2D Array:", element)
+
+
+==>>slicing
+
+import numpy as np
+
+# Create a 1D array
+array1d = np.array([10, 20, 30, 40, 50, 60])
+print("Original 1D Array:")
+print(array1d)
+
+# Slicing 1D array
+slice1d = array1d[1:4]  # Extracts elements from index 1 to 3
+print("\nSliced 1D Array (index 1 to 3):")
+print(slice1d)
+
+# Create a 2D array
+array2d = np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]])
+print("\nOriginal 2D Array:")
+print(array2d)
+
+# Slicing 2D array
+slice2d = array2d[0:2, 1:3]  # Extracts rows 0 to 1 and columns 1 to 2
+print("\nSliced 2D Array (rows 0 to 1, columns 1 to 2):")
+print(slice2d)
+
+# Slicing with step
+slice1d_step = array1d[::2]  # Extracts every second element
+print("\nSliced 1D Array (every second element):")
+print(slice1d_step)
+
+# Reverse the 1D array
+reversed_array1d = array1d[::-1]  # Reverses the array
+print("\nReversed 1D Array:")
+print(reversed_array1d)
+
+-----------------------------------------------msa------------------------------------
+
+------------------------MSA Steps-----------------------
+First 3 jarfiles and domain.xml should be in the main folder
+
+then create main folder msaApp in that folder resourceapp and clientapp
+
+First create 2 app client and resource with archtype and then select javaee8-microprofile-archtype 
+
+Resource(Basically Api App)
+--in Resource app---
+make changes in pom.xml version to 3.2
+then restfulservices->ExampleService->
+@GET
+@Path("/hello")
+@Produces(Mediatype.text_html) //ws.rs valu import karvu
+public String getHello(){
+    return "<h1>Hello Resource App</h1>"
+}
+->then clean build app and run select payara server
+->Url to run app 
+    Resource/rest/example/gethello
+
+------now create secondapp clientApp with same steps as above------
+
+->sourcepackages->new interface->exampleinterface
+    @GET
+    @Path("/hello")
+@Produces(Mediatype.text_html) //ws.rs valu import karvu
+
+
+othersources->new folder META-INF -> new properties filename microprofile-config.properties 
+in thsn file 
+apiurl/mp-rest.url = http://localhost:8085/ResourceAppMSA/rest/example
+
+in interface file at the top
+@Registerclient(configkey = "apiurl")
+
+-------------create servlet----------
+sourcepackages->new servlet->ExampleServlet(package name servlets)
+
+in exampleservlet
+@inject
+@restclient
+exampleintereface ei;
+
+ei.getHello();//in servlet html code
+
+---------------now cleanbuild and run app-------------
+
+----both this should be run in terminal according to our app path ---
+
+java -jar payara-micro-5.2022.2.jar --deploy MSAApp/artifact/MSAApp.war --port 8085
+
+//here port number which we want our app to run
+
+java -jar payara-micro-5.2022.2.jar --deploy MSAClient/artifact/MSAClient.war --port 8086
+
+//After this we have to change port number in config file then chek if it is working or not 
+
+
+-----------------------------------------------------------------------------------------------------------DATABASE STARTS HERE--------------------------------------
+CREATE A DEMO DATABSE 
+
+  ->to create pool right click on payara server then adminconsole 
+  then in jdbc connection pools 
+  in this poolname
+  resourcetype 
+  database vendor mysql or mysql8
+
+->Properties in jdbc connection pools
+URL: jdbc:mysql//3306/demo
+ServerName : localhost
+password : root
+user : root
+portNumber : 3306
+driverClass : com.mysql.jdbx.optional.MysqlDataSource or com.mysql.jdbc.Driver or com.mysql.cj.jdbc.Driver
+driver : com.mysql.jdbx.optional.MysqlDataSource
+databaseName : demo
+
+->jdbc resource 
+    jdbc/msa
+    poolname : msapool
+
+----------------------------------------Code Starts here Db connection ends-------------------------
+
+In ResourceApp->Source Packages -> new Entity class from database 
+
+jdbc/url : jdbc:mysql://localhost/3306/demo?useSSL=false
+
+-------------persistence will be created in config file ------------
+in persistence comment exclude tag
+
+------------noew create session bean-----------
+source packages -> ejbname (emamplbean) -> packages(beans)
+
+exampleservice.java(bean)
+
+@Stateless
+public class ExxampleBean{
+    @PersistenceContext(unitname = "poolname")
+    EntityManager em;
+
+    public Collection<TUsers> getAllUsers(){
+    return em.createnamedquery("tusers.findAll").getResultList();
+}
+
+}
+
+now we have to call gettall users in exampleservice in restful 
+@Inject
+exampleBean eb;
+
+@GET
+@Path("/getUSers")
+@produces(Mediatype.application_json)
+public Collection<Tusers> getUSers(){
+ 	return eb.getAllUSers();
+}
+
+------clean build and run the project------------------
+localhost:8080/ResourceApp/rest/example/getUsers
+
+
+
+=======================Now in ClientApp=========
+copy entities folder frrom resource app to client app in source packages
+
+->Interface file 
+@GET
+@Path("/GetUsers")
+@Produces(Mediatype.application_json)
+public collection<Tusers> getAllUsers();
+
+->Servlet file in html code
+    e1.getallusers();
+
+----run it on 8080 port number -----
+
+------------add Libraries in our app with cmd-----------
+ java -jar payara-micro-5.2022.2.jar --deploy MSAApp/artifact/MSAApp.war --port 8085 --addlibs mysql-connector-java-5.1.47-bin.jar --domainconfig domain.xml
+
+->now in domain.xml file 
+    <jdbc-connection-pool>
+    	datasourcename -> based on driverclass
+    	name = our pool name for eg mypool
+
+        <property name="password" value="root">
+         
+    </jdbc-connection-pool>
+
+<jdbc-resource pool-name>
+    jndi-name="jdbc/msa" //our jndi name from pool
+</jdbc-resource pool-name>
+
+<servers>
+    <resource-ref ref="jdbc/msa">
+    //or copy which is already exists in it and then change value based on our values 
+
+------------------domain changes ends---------------
+
+---------------------------------------MSA final steps with code--------------------------
+table category = category_id,category_name
+table product = product_id,product_name,description,category_id(fk)
+
+
+setup both the project as maven archtype javaee8 
+check pom.xml version 3.2
+then pool ping 7 properties url Url user password port database driver driverClass
+make connections 
+entity from database in resourceapp , copy entity package only in client app
+name persistence file msapu
+create session bean in resourceapp
+
+in CategoryBean session bean 
+@Stateless
+public class CategoryBean {
+    @PersistenceContext(unitName= "jpapu")
+    EntityManager em;
+    
+    public Collection<Category> getCategory(){
+        return em.createNamedQuery("Category.findAll").getResultList();
+    }
+
+
+in ProductBean.java session bean
+@Stateless
+public class ProductBean {
+    @PersistenceContext(unitName="jpapu")
+    EntityManager em;
+    
+    public Collection<Product> getProducts(){
+        return em.createNamedQuery("Product.findAll").getResultList();
+    }
+    
+    public void insertProduct(String name,String description,int cid){
+        Category category = em.find(Category.class, cid);
+        Product p = new Product();
+        p.setCategoryId(category);
+        p.setDescription(description);
+        p.setProductName(name) ;
+         em.persist(p);          
+    }
+    
+   public Collection<Product> getByProductCategoryName(int id){
+       
+       Category cat = em.find( Category.class,id);
+       
+     return em.createQuery("SELECT p FROM Product p WHERE p.categoryId = :categoryId", Product.class)
+             .setParameter("categoryId", cat)
+             .getResultList();
+    } 
+    
+    
+    public Collection<Product> getByProductName(String name){
+     return em.createNamedQuery("Product.findByProductName", Product.class)
+             .setParameter("productName", name)
+             .getResultList();
+    }
+    
+    public void deleteProduct(int id){
+          Product product = em.find(Product.class, id); 
+          em.remove(product);
+    }
+
+
+
+
+then in inbuilt exampleservice 
+    @Inject CategoryBean cb;
+     @Inject ProductBean pb;
+
+    
+    @GET
+    @Path("/category")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Collection<Category> getCategory() {
+        return cb.getCategory();
+    }
+    
+    @GET
+    @Path("/product")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Collection<Product> getProducts() {
+        return pb.getProducts();
+    }
+    
+    
+      @POST
+    @Path("/product/{pname}/{description}/{cid}")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public String insertedProducts(@PathParam("pname") String pname,@PathParam("description") String description,@PathParam("cid") int cid) {
+         pb.insertProduct(pname,description,cid);
+         return "Inserted Success";
+    }
+    
+    
+    @POST
+    @Path("/productBycatName/{id}")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Collection<Product> productBycatName(@PathParam("id") int id) {
+         return pb.getByProductCategoryName(id);
+    }
+    
+    @GET
+    @Path("/productByName/{name}")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Collection<Product> getByProduct(@PathParam("name") String name) {
+         return pb.getByProductName(name);
+    }
+    
+    
+    @DELETE
+    @Path("/product/{id}")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public String deleteProducts(@PathParam("id") int id) {
+         pb.deleteProduct(id);
+         return "deleted Success";
+    }
+
+run this api as https://localhost:8080/rest/example/product
+
+
+Now in client app
+check pom.xml
+now in other packages-> src/main/resources -> creates a folder name as "META-INF" -> create
+	property file -> microprofile-config
+inside of microprofile-config file write below line which is your url of resource app and write only this line
+appURL/mp-rest/url=http://localhost:8080/external-server/rest/example/
+
+
+now creates an interface
+
+@RegisterRestClient(configKey="appURL")
+public interface categoryInterface {
+    
+    @GET
+    @Path("category")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Collection<Category> getCategory() ;
+    
+    @GET
+    @Path("product")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Collection<Product> getProducts() ;
+    
+     @GET
+    @Path("/productByName/{name}")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Collection<Product> getByProduct(@PathParam("name") String name) ;
+    
+        @POST
+    @Path("/productBycatName/{id}")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Collection<Product> productBycatName(@PathParam("id") int id) ;
+    
+      @POST
+    @Path("/product/{pname}/{description}/{cid}")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public String insertedProducts(@PathParam("pname") String pname,    	@PathParam("description") String description,@PathParam("cid") int cid) ;
+    
+
+
+
+Now creates servlet as frontend 
+ProductDisplay.java
+
+@WebServlet(name = "ProductDisplay", urlPatterns = {"/ProductDisplay"})
+public class ProductDisplay extends HttpServlet {
+
+  @Inject categoryInterface ci;
+    
+    protected void processRequest(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
+        response.setContentType("text/html;charset=UTF-8");
+        try (PrintWriter out = response.getWriter()) {
+           
+            out.println("<!DOCTYPE html>");
+            out.println("<html>");
+            out.println("<head>");
+            out.println("<title>Servlet ProductDisplay</title>");            
+            out.println("</head>");
+            out.println("<body>");
+            
+              out.println("<form  method='POST' action='http://localhost:8080/external-client/filterProduct'>");
+              out.println("<select name='categoryName'>");
+             for (Category cat : ci.getCategory()){
+                 out.println("<option value="+cat.getCategoryId()+">"+cat.getCategoryName()+" </option>");
+             }
+            out.println("</select>");
+            out.println("<input type='submit' value='filter'/>");
+            out.println("</form>");
+              out.println("<table border='1'>");
+        out.println("<tr><th>Product ID</th><th>Product Name</th><th>Description</th><th>Category Name</th></tr>");
+       
+           for (Product product : ci.getProducts()) {
+            out.println("<tr>");
+            out.println("<td>" + product.getProductId() + "</td>");
+            out.println("<td>" + product.getProductName() + "</td>");
+            out.println("<td>" + product.getDescription() + "</td>");
+            out.println("<td>" + product.getCategoryId().getCategoryName() + "</td>");
+            
+            out.println("</tr>");
+        }
+             out.println("</table>");
+        out.println("</body>");
+            out.println("</html>");
+        }
+    }
+
+
+    @Override
+    protected void doGet(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
+        processRequest(request, response);
+    }
+
+
+----------
+
+
+InsertProduct.java
+
+@WebServlet(name = "InsertProduct", urlPatterns = {"/InsertProduct"})
+public class InsertProduct extends HttpServlet {
+    
+    @Inject categoryInterface ci;
+    
+    protected void processRequest(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
+        response.setContentType("text/html;charset=UTF-8");
+        try (PrintWriter out = response.getWriter()) {
+            /* TODO output your page here. You may use following sample code. */
+            out.println("<!DOCTYPE html>");
+            out.println("<html>");
+            out.println("<head>");
+            out.println("<title>Servlet InsertProduct</title>");            
+            out.println("</head>");
+            out.println("<body>");
+            out.println("<form  method='POST' action='http://localhost:8080/external-client/InsertProduct'>");
+            out.println("<input type='text' name='productName' id='productName'/>");
+            out.println("<input type='text' name='description' id='productName'/>");
+            out.println("<select name='categoryName'>");
+             for (Category cat : ci.getCategory()){
+                 out.println("<option value="+cat.getCategoryId()+">"+cat.getCategoryName()+" </option>");
+             }
+            out.println("</select>");
+            
+            out.println("<input type='submit' value='Insert Product' />");
+            out.println("</form>");
+            
+            out.println("</body>");
+            out.println("</html>");
+        }
+    }
+
+    @Override
+    protected void doGet(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
+        processRequest(request, response);
+    }
+
+    @Override
+    protected void doPost(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
+        
+        String pn = request.getParameter("productName");
+        String des = request.getParameter("description");
+        int cn = Integer.parseInt( request.getParameter("categoryName"));
+
+        ci.insertedProducts(pn, des, cn);
+        
+        response.sendRedirect("http://localhost:8080/external-client/ProductDisplay");
+        
+        processRequest(request, response);
+    }
+
+   
+    @Override
+    public String getServletInfo() {
+        return "Short description";
+    }// </editor-fold>
+
+----------
+
+FilterProduct.java
+
+@WebServlet(name = "filterProduct", urlPatterns = {"/filterProduct"})
+public class filterProduct extends HttpServlet {
+
+    @Inject categoryInterface ci;
+    protected void processRequest(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
+        response.setContentType("text/html;charset=UTF-8");
+        try (PrintWriter out = response.getWriter()) {
+            /* TODO output your page here. You may use following sample code. */
+            out.println("<!DOCTYPE html>");
+            out.println("<html>");
+            out.println("<head>");
+            out.println("<title>Servlet filterProduct</title>");            
+            out.println("</head>");
+            out.println("<body>");
+            out.println("<table border='1'>");
+             out.println("<tr><th>Product ID</th><th>Product Name</th><th>Description</th><th>Category Name</th></tr>");
+       int pn = Integer.parseInt(request.getParameter("categoryName"));
+           for (Product product : ci.productBycatName(pn)) {
+            out.println("<tr>");
+            out.println("<td>" + product.getProductId() + "</td>");
+            out.println("<td>" + product.getProductName() + "</td>");
+            out.println("<td>" + product.getDescription() + "</td>");
+            out.println("<td>" + product.getCategoryId().getCategoryName() + "</td>");
+            
+            out.println("</tr>");
+        }
+             out.println("</table>");
+            out.println("</body>");
+            out.println("</html>");
+        }
+    }
+
+
+===================================Practical assigment==========
+Practical Assignment 1
+
+
+1. Given a two integer numbers return their product and  if the product is greater
+than 1000, then return their sum
+
+=>
+def productofsum(x,y):
+    product = x * y
+    if product > 1000:
+        return x + y
+    else:
+        return product
+answer = productofsum(20,70)
+print(answer)
+
+
+2. Given a range of first 10 numbers, Iterate from start number to the end number
+and print the sum of the current number and previous number
+
+=>
+number = range(1,10)
+
+previousnum = 0
+
+for currentnum in number:
+    sum = currentnum + previousnum
+
+print(f"current number: {currentnum}, Previousnumber:{previousnum}, sum:{sum}")
+previousnum = currentnum
+
+
+3. Given a string, display only those characters which are present at an even index
+number.
+
+=>
+def evenindex(s):
+    return s[::2]
+
+a1 = "OpenAI"
+result = evenindex(a1)
+print(result)
+
+
+
+4. Given a list of numbers, return True if first and last number of a list is same
+
+=>
+def firstandlast(numbers):
+    if len(numbers) < 1:
+        return False
+    return numbers[0] == numbers[-1]
+
+numbers = [10,20,30,40,50,60,10]
+print(firstandlast(numbers))
+
+
+5. Given a two list. Create a third list by picking an odd-index element from the first
+list and even index elements from second.
+
+=>
+l1 = [10,20,30,40,50,60]
+l2 = [70,80,90,100,110,120]
+
+oddindex = l1[1::2]
+
+evenindex = l2[0::2]
+
+l3 = oddindex + evenindex
+print("Third List:- ",l3)
+
+
+6. Given an input list removes the element at index 4 and add it to the 2nd position
+and also, at the end of the list
+=>
+
+mylist = [10,20,30,40,50,60,70]
+
+element = mylist.pop(4)
+
+mylist.insert(1,element)
+
+mylist.append(element)
+print(mylist)
+
+
+7. Given a list slice it into a 3 equal chunks and reverse each list
+=>
+def reverse(list):
+    chunksize = len(list)
+    chunks = [list[i:i + chunksize] for i in range(0,len(list),chunksize)]
+    reversedchunks = [chunk[::-1] for chunk in chunks]
+    return reversedchunks
+
+list = [10,20,30,40,50,60]
+answer = reverse(list)
+print(answer)
+
+
+8. Given a list iterate it and count the occurrence of each element and create a
+dictionary to show the count of each element
+=>
+
+mylist = ['apple','banana','mango','grapes','apple','banana']
+
+elementcount = {}
+
+for element in mylist:
+    if element in elementcount:
+        elementcount[element] +=1
+    else:
+        elementcount[element] =1
+print(elementcount)
+
+
+9. Add a list of elements to a given set: {‘yellow’,’orange’} List:[blue,black]
+=>
+myset = {'yellow','Orange'}
+mylisted = ['black','blue']
+
+myset.update(mylisted)
+print(myset)
+
+
+10. Print the following pattern
+
+1
+1 2
+1 2 3
+1 2 3 4
+1 2 3 4 5
+=>
+
+number = int(input("enter the number here:- "))
+
+for i in range(1,number+1):
+    for j in range(1,i+1):
+        print(j,end="")
+    print()
+
+
+11. calculate the sum of all number between 1 and given number
+=>
+def numbers(n):
+    return sum(range(1,n+1))
+
+g1 = 10
+answer = numbers(g1)
+print(f"the sum of all numbers between 1 and {g1} is: {answer}")
+
+
+12. Given a list iterate it and display numbers which are divisible by 5 and if you find
+number greater than 150 stop the loop iteration
+=>
+numbers = [10,20,30,40,50,60,78,41,52,63,98,120,175]
+
+for num in numbers:
+    if num > 150:
+        break
+    if num % 5 == 0:
+        print(num)
+
+
+13. Reverse the following list using for loop
+
+List1 = [10,20,30,40]
+
+=>
+
+list = [10,20,30,40,50]
+reverse = []
+
+for i in range(len(list)-1,-1,-1):
+    reverse.append(list[i])
+print(reverse)
+
+
+14. Write a Python program to display all the prime numbers within a range
+=>
+
+def is_prime(num):
+    if num <= 1:
+        return False
+    for i in range(2,int(num**0.5)+1):
+        if num % i == 0:
+            return False
+        return True
+
+def display_primes(start,end):
+    print(f"prime numbers between {start} and {end} are :- ")
+    for num in range(start,end + 1):
+        if is_prime(num):
+            print(num,end="")
+        print()
+
+start = int(input("Enter the start of the range:- "))
+end = int(input("Enter the end of the range:- "))
+
+display_primes(start,end)
+
+
+
+Practical Assignment 2 oop
+
+1. Implement simple, multiple, multi level inheritance  OOP for a bank
+Define a BankAccount class with an initializer taking account number, name, and initial deposit as parameters, savings account interest rates @ 6.5 p.a . Include methods to deposit, withdraw, and check balances.
+inlude the fuctions as Add account,Delete account,update account.
+
+======>>>>
+
+class bankaccount:
+    interestrate = 6.5
+    
+    def __init__(self,accountnumber,name,deposit):
+        self.accountnumber = accountnumber
+        self.name = name
+        self.balance = deposit
+        
+    def deposit(self,amount):
+        self.balance += amount
+        print(f"Deposited {amount}. and New Balance: {self.balance}")
+    
+    def withdraw(self,amount):
+        if amount > self.balance:
+            print("Insufficient funds!!")
+        else:
+            self.balance -=amount
+            print(f"Withdraw {amount}. New Balance: {self.balance}")
+    
+    def checkbalance(self):
+        return self.balance
+    
+    def __str__(self):
+        return f"Account: {self.accountnumber}, Name: {self.name}, Balance: {self.balance}"
+    
+class AccountManagement:
+    def __init__(self):
+        self.accounts = {}
+    
+    def addaccount(self,account):
+        self.accounts[account.accountnumber] = account
+        print(f"Account {account.accountnumber} added.")
+        
+    def deleteaccount(self,accountnumber):
+        if accountnumber in self.accounts:
+            del self.accounts[accountnumber]
+            print(f"Account {accountnumber} Deleted.")
+        else:
+            print(f"Account Not Found.")
+    
+    def updateaccount(self,accountnumber,name=None,deposit=None):
+        if accountnumber in self.accounts:
+            account = self.accounts[accountnumber]
+            if name:
+                account.name = name
+                print(f"Account {accountnumber} name updated to {name}.")
+            if deposit is not None:
+                account.deposit(deposit)
+        else:
+            print("Account Not Found.")
+    
+    def getaccount(self,accountnumber):
+        return self.accounts.get(accountnumber,None)
+
+class Bank(bankaccount,AccountManagement):
+    def __init__(self):
+        AccountManagement.__init__(self)
+
+bank = Bank()
+
+account1 = bankaccount('1002563','Akshay',10000)
+account2 = bankaccount('1125687','Arjun',80000)
+
+bank.addaccount(account1)
+bank.addaccount(account2)
+
+print(account1.checkbalance())
+print(account2.checkbalance())
+
+account1.deposit(1000)
+account2.deposit(2500)
+
+bank.updateaccount('1002563',name="Abhi",deposit=2500)
+bank.deleteaccount('456')
+
+account = bank.getaccount('1002563')
+if account:
+    print(account)
+
+
+
+2. Revise the question 1; by adding 2 types of account, Saving account and Current account.
+
+Where the current account conditions are as follows
+
+product 1 : A Premium Banking Program exclusively designed to meet the business needs of HNI customers.
+Balance Requirement ₹5,00,000/-
+Interest earned NA
+Suited for Corporates
+
+and
+
+Zero2One Program is a one-stop solution for startups that takes care of banking as well as beyond banking needs of the customers
+Balance Requirement ₹1,00,000/- (Waiver for first 3 years)
+Interest earned NA
+Suited for Budding Startups
+
+Apply OOP Concepts.
+
+=======>>>>>>
+
+class Account:
+    def __init__(self, account_number, account_holder, balance):
+        self.account_number = account_number
+        self.account_holder = account_holder
+        self.balance = balance
+
+    def deposit(self, amount):
+        self.balance += amount
+        print(f"Deposited ₹{amount} into account {self.account_number}. New balance: ₹{self.balance}")
+
+    def withdraw(self, amount):
+        if amount > self.balance:
+            print("Insufficient balance")
+        else:
+            self.balance -= amount
+            print(f"Withdrew ₹{amount} from account {self.account_number}. New balance: ₹{self.balance}")
+
+class SavingAccount(Account):
+    def __init__(self, account_number, account_holder, balance, interest_rate):
+        super().__init__(account_number, account_holder, balance)
+        self.interest_rate = interest_rate
+
+    def add_interest(self):
+        interest = self.balance * self.interest_rate / 100
+        self.deposit(interest)
+        print(f"Added interest ₹{interest} to account {self.account_number}. New balance: ₹{self.balance}")
+
+class CurrentAccount(Account):
+    def __init__(self, account_number, account_holder, balance, product_type):
+        super().__init__(account_number, account_holder, balance)
+        self.product_type = product_type
+
+    def check_balance_requirement(self):
+        if self.product_type == "Premium Banking Program":
+            if self.balance < 500000:
+                print("Balance requirement not met. Minimum balance required: ₹5,00,000")
+            else:
+                print("Balance requirement met.")
+        elif self.product_type == "Zero2One Program":
+            if self.balance < 100000:
+                print("Balance requirement not met. Minimum balance required: ₹1,00,000 (Waiver for first 3 years)")
+            else:
+                print("Balance requirement met.")
+
+saving_account = SavingAccount("SAV123", "John Doe", 10000, 2)
+saving_account.deposit(5000)
+saving_account.add_interest()
+
+current_account1 = CurrentAccount("CUR123", "ABC Corporation", 500000, "Premium Banking Program")
+current_account1.check_balance_requirement()
+
+current_account2 = CurrentAccount("CUR456", "StartupX", 50000, "Zero2One Program")
+current_account2.check_balance_requirement()
+
+
+
+-----------------------------------------------------MSA CODE--------------------------------------
+
+------------------------MSA Steps-----------------------
+First 3 jarfiles and domain.xml should be in the main folder
+
+then create main folder msaApp in that folder resourceapp and clientapp
+
+First create 2 app client and resource with archtype and then select javaee8-microprofile-archtype 
+
+Resource(Basically Api App)
+--in Resource app---
+make changes in pom.xml version to 3.2
+then restfulservices->ExampleService->
+@GET
+@Path("/hello")
+@Produces(Mediatype.text_html) //ws.rs valu import karvu
+public String getHello(){
+    return "<h1>Hello Resource App</h1>"
+}
+->then clean build app and run select payara server
+->Url to run app 
+    Resource/rest/example/gethello
+
+------now create secondapp clientApp with same steps as above------
+
+->sourcepackages->new interface->exampleinterface
+    @GET
+    @Path("/hello")
+@Produces(Mediatype.text_html) //ws.rs valu import karvu
+
+
+othersources->new folder META-INF -> new properties filename microprofile-config.properties 
+in thsn file 
+apiurl/mp-rest/url = http://localhost:8085/ResourceAppMSA/rest/example
+
+in interface file at the top
+@Registerclient(configkey = "apiurl")
+
+-------------create servlet----------
+sourcepackages->new servlet->ExampleServlet(package name servlets)
+
+in exampleservlet
+@inject
+@restclient
+exampleintereface ei;
+
+ei.getHello();//in servlet html code
+
+---------------now cleanbuild and run app-------------
+
+----both this should be run in terminal according to our app path ---
+
+java -jar payara-micro-5.2022.2.jar --deploy MSAApp/artifact/MSAApp.war --port 8085
+
+//here port number which we want our app to run
+
+java -jar payara-micro-5.2022.2.jar --deploy MSAClient/artifact/MSAClient.war --port 8086
+
+//After this we have to change port number in config file then chek if it is working or not 
+
+
+-----------------------------------------------------------------------------------------------------------DATABASE STARTS HERE--------------------------------------
+CREATE A DEMO DATABSE 
+
+  ->to create pool right click on payara server then adminconsole 
+  then in jdbc connection pools 
+  in this poolname
+  resourcetype 
+  database vendor mysql or mysql8
+
+->Properties in jdbc connection pools
+URL: jdbc:mysql//3306/demo
+ServerName : localhost
+password : root
+user : root
+portNumber : 3306
+driverClass : com.mysql.jdbx.optional.MysqlDataSource or com.mysql.jdbc.Driver or com.mysql.cj.jdbc.Driver
+driver : com.mysql.jdbx.optional.MysqlDataSource
+databaseName : demo
+
+->jdbc resource 
+    jdbc/msa
+    poolname : msapool
+
+----------------------------------------Code Starts here Db connection ends-------------------------
+
+In ResourceApp->Source Packages -> new Entity class from database 
+
+jdbc/url : jdbc:mysql://localhost/3306/demo?useSSL=false
+
+-------------persistence will be created in config file ------------
+in persistence comment exclude tag
+
+------------noew create session bean-----------
+source packages -> ejbname (emamplbean) -> packages(beans)
+
+exampleservice.java(bean)
+
+@Stateless
+public class ExxampleBean{
+    @PersistenceContext(unitname = "poolname")
+    EntityManager em;
+
+    public Collection<TUsers> getAllUsers(){
+    return em.createnamedquery("tusers.findAll").getResultList();
+}
+
+}
+
+now we have to call gettall users in exampleservice in restful 
+@Inject
+exampleBean eb;
+
+@GET
+@Path("/getUSers")
+@produces(Mediatype.application_json)
+public Collection<Tusers> getUSers(){
+ 	return eb.getAllUSers();
+}
+
+------clean build and run the project------------------
+localhost:8080/ResourceApp/rest/example/getUsers
+
+
+
+=======================Now in ClientApp=========
+copy entities folder frrom resource app to client app in source packages
+
+->Interface file 
+@GET
+@Path("/GetUsers")
+@Produces(Mediatype.application_json)
+public collection<Tusers> getAllUsers();
+
+->Servlet file in html code
+    e1.getallusers();
+
+----run it on 8080 port number -----
+
+------------add Libraries in our app with cmd-----------
+ java -jar payara-micro-5.2022.2.jar --deploy MSAApp/artifact/MSAApp.war --port 8085 --addlibs mysql-connector-java-5.1.47-bin.jar --domainconfig domain.xml
+
+->now in domain.xml file 
+    <jdbc-connection-pool>
+    	datasourcename -> based on driverclass
+    	name = our pool name for eg mypool
+
+        <property name="password" value="root">
+         
+    </jdbc-connection-pool>
+
+<jdbc-resource pool-name>
+    jndi-name="jdbc/msa" //our jndi name from pool
+</jdbc-resource pool-name>
+
+<servers>
+    <resource-ref ref="jdbc/msa">
+    //or copy which is already exists in it and then change value based on our values 
+
+------------------domain changes ends---------------
+
+    
+---------------------------python108-----------------------------
+
+steps for copy code into the GitHub
+
+create one folder -> open that folder terminal -> write the command line
+
+git clone https://github.com/aleth098/python
+
+write the command line in terminal for download
+
+Pip install pandas 
+Pip install numpy
+Pip install matplotlib.pyplot 
+
+
+
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plot
+
+# OOP CRUD using user input
+
+class car():
+    cars=[]
+    def getDetails(self,cid,cname):
+        cdata={"cid":cid,
+                "cname":cname
+               }
+        self.cars.append(cdata)
+
+    def UpdData(self,i,cid,cname):
+        self.cars[i]={
+                "cid":cid,
+                "cname":cname,
+            }
+        print("record updated")
+
+    def DelData(self,i):
+        del self.cars[i]
+        print("record deleted")
+        
+        
+    def printData(self):
+        
+        for i in self.cars:
+            print(i)
+        
+c=car()
+while True:
+    print("press 1 for Add Data")
+    print("press 2 for Delete Data")
+    print("press 3 for Update Data")
+    print("press 4 for Display Data")
+
+    ch=int(input("Enter your choice: "))
+    
+    if(ch==1):
+        cid=int(input("Enter Cid = "))
+        cname=input("Enter Cname = ")
+        c.getDetails(cid,cname)
+        
+    elif(ch==2):
+        i=int(input("Enter index number:"))
+        c.DelData(i)
+
+    elif(ch==3):
+        i=int(input("Enter index number:"))
+        cid=int(input("Enter Cid:"))
+        cname=input("Enter Cname:")
+        c.UpdData(i,cid,cname)
+        
+        
+    elif(ch==4):
+          c.printData()
+
+    else:
+        break
+
+================================================================
+
+'''def sum1(a,b):
+    c=a+b
+    print(c)
+
+def sub(a,b):
+    c=a-b
+    print(c)
+
+def mul(a,b):
+    c=a*b
+    print(c)
+
+def div(a,b):
+    c=a/b
+    print(c)
+
+a=int(input("Enter number1: "))
+b=int(input("Enter number2: "))
+sum1(a,b)
+sub(a,b)
+mul(a,b)
+div(a,b)
+
+class emp():
+    def demo(self,a,b):
+        self.c=a+b
+
+    def print1(self):
+        print(self.c)
+
+
+e=emp()
+e.demo(10,20)
+e.print1()'''
+
+import numpy as np
+import matplotlib.pyplot as plot
+data=np.array([1,2,3,4,5])
+data2=np.array(['a','b','c','d','e'])
+plot.xlabel("student name")
+plot.ylabel('student marks')
+plot.title("Marksheet")
+plot.bar(data2,data)
+plot.show()
+
+import pandas as pd
+import csv as c
+import matplotlib.pyplot as plot
+
+df=pd.read_csv('meghacsv.csv')
+df.plot(x="ename",y="salary")
+#print(df['salary'])
+avg=sum(df['salary'])/len(df['salary'])
+
+print(avg)
+
+with open('meghacsv.csv','a',newline="")as f:
+    fobj=c.writer(f)
+    fobj.writerow([avg])
+plot.show()
+
+
+================================================================
+
+# OOP CRUD using static input
+
+class Car:
+    def __init__(self, car_id, make, model, year):
+        self.car_id = car_id
+        self.make = make
+        self.model = model
+        self.year = year
+
+    def __str__(self):
+        return f"Car ID: {self.car_id}, Make: {self.make}, Model: {self.model}, Year: {self.year}"
+
+
+class CarShowroom:
+    def __init__(self):
+        self.cars = []
+
+    def insert_car(self, car):
+        self.cars.append(car)
+        print(f"Inserted car: {car}")
+
+    def display_cars(self):
+        if not self.cars:
+            print("No cars in the showroom.")
+        else:
+            for car in self.cars:
+                print(car)
+
+    def edit_car(self, car_id, make, model, year):
+        for car in self.cars:
+            if car.car_id == car_id:
+                car.make = make
+                car.model = model
+                car.year = year
+                print(f"Edited car with ID {car_id} to: {car}")
+                return
+        print(f"Error: Car with ID {car_id} does not exist.")
+
+    def delete_car(self, car_id):
+        for index, car in enumerate(self.cars):
+            if car.car_id == car_id:
+                deleted_car = self.cars.pop(index)
+                print(f"Deleted car: {deleted_car}")
+                return
+        print(f"Error: Car with ID {car_id} does not exist.")
+
+
+# Example usage
+showroom = CarShowroom()
+
+# Insert cars
+car1 = Car(1, "Toyota", "Corolla", 2020)
+car2 = Car(2, "Honda", "Civic", 2019)
+showroom.insert_car(car1)
+showroom.insert_car(car2)
+
+# Display cars
+showroom.display_cars()
+
+# Edit car
+showroom.edit_car(1, "Toyota", "Camry", 2021)
+
+# Delete car
+showroom.delete_car(2)
+
+# Display cars again
+showroom.display_cars()
+
+================================================================
+
+1. Given a two integer numbers return their product and  if the product is greater
+than 1000, then return their sum
+
+=>
+def productofsum(x,y):
+    product = x * y
+    if product > 1000:
+        return x + y
+    else:
+        return product
+answer = productofsum(20,70)
+print(answer)
+
+
+2. Given a range of first 10 numbers, Iterate from start number to the end number
+and print the sum of the current number and previous number
+
+=>
+number = range(1,10)
+
+previousnum = 0
+
+for currentnum in number:
+    sum = currentnum + previousnum
+
+print(f"current number: {currentnum}, Previousnumber:{previousnum}, sum:{sum}")
+previousnum = currentnum
+
+
+3. Given a string, display only those characters which are present at an even index
+number.
+
+=>
+def evenindex(s):
+    return s[::2]
+
+a1 = "OpenAI"
+result = evenindex(a1)
+print(result)
+
+
+
+4. Given a list of numbers, return True if first and last number of a list is same
+
+=>
+def firstandlast(numbers):
+    if len(numbers) < 1:
+        return False
+    return numbers[0] == numbers[-1]
+
+numbers = [10,20,30,40,50,60,10]
+print(firstandlast(numbers))
+
+
+5. Given a two list. Create a third list by picking an odd-index element from the first
+list and even index elements from second.
+
+=>
+l1 = [10,20,30,40,50,60]
+l2 = [70,80,90,100,110,120]
+
+oddindex = l1[1::2]
+
+evenindex = l2[0::2]
+
+l3 = oddindex + evenindex
+print("Third List:- ",l3)
+
+
+6. Given an input list removes the element at index 4 and add it to the 2nd position
+and also, at the end of the list
+=>
+
+mylist = [10,20,30,40,50,60,70]
+
+element = mylist.pop(4)
+
+mylist.insert(1,element)
+
+mylist.append(element)
+print(mylist)
+
+
+7. Given a list slice it into a 3 equal chunks and reverse each list
+=>
+def reverse(list):
+    chunksize = len(list)
+    chunks = [list[i:i + chunksize] for i in range(0,len(list),chunksize)]
+    reversedchunks = [chunk[::-1] for chunk in chunks]
+    return reversedchunks
+
+list = [10,20,30,40,50,60]
+answer = reverse(list)
+print(answer)
+
+
+8. Given a list iterate it and count the occurrence of each element and create a
+dictionary to show the count of each element
+=>
+
+mylist = ['apple','banana','mango','grapes','apple','banana']
+
+elementcount = {}
+
+for element in mylist:
+    if element in elementcount:
+        elementcount[element] +=1
+    else:
+        elementcount[element] =1
+print(elementcount)
+
+
+9. Add a list of elements to a given set: {‘yellow’,’orange’} List:[blue,black]
+=>
+myset = {'yellow','Orange'}
+mylisted = ['black','blue']
+
+myset.update(mylisted)
+print(myset)
+
+
+10. Print the following pattern
+
+1
+1 2
+1 2 3
+1 2 3 4
+1 2 3 4 5
+=>
+
+number = int(input("enter the number here:- "))
+
+for i in range(1,number+1):
+    for j in range(1,i+1):
+        print(j,end="")
+    print()
+
+
+11. calculate the sum of all number between 1 and given number
+=>
+def numbers(n):
+    return sum(range(1,n+1))
+
+g1 = 10
+answer = numbers(g1)
+print(f"the sum of all numbers between 1 and {g1} is: {answer}")
+
+
+12. Given a list iterate it and display numbers which are divisible by 5 and if you find
+number greater than 150 stop the loop iteration
+=>
+numbers = [10,20,30,40,50,60,78,41,52,63,98,120,175]
+
+for num in numbers:
+    if num > 150:
+        break
+    if num % 5 == 0:
+        print(num)
+
+
+13. Reverse the following list using for loop
+
+List1 = [10,20,30,40]
+
+=>
+
+list = [10,20,30,40,50]
+reverse = []
+
+for i in range(len(list)-1,-1,-1):
+    reverse.append(list[i])
+print(reverse)
+
+
+14. Write a Python program to display all the prime numbers within a range
+=>
+
+def is_prime(num):
+    if num <= 1:
+        return False
+    for i in range(2,int(num**0.5)+1):
+        if num % i == 0:
+            return False
+        return True
+
+def display_primes(start,end):
+    print(f"prime numbers between {start} and {end} are :- ")
+    for num in range(start,end + 1):
+        if is_prime(num):
+            print(num,end="")
+        print()
+
+start = int(input("Enter the start of the range:- "))
+end = int(input("Enter the end of the range:- "))
+
+display_primes(start,end)
+
+
+
+Practical Assignment 2
+
+1. Implement simple, multiple, multi level inheritance  OOP for a bank
+Define a BankAccount class with an initializer taking account number, name, and initial deposit as parameters, savings account interest rates @ 6.5 p.a . Include methods to deposit, withdraw, and check balances.
+inlude the fuctions as Add account,Delete account,update account.
+
+======>>>>
+
+class bankaccount:
+    interestrate = 6.5
+    
+    def __init__(self,accountnumber,name,deposit):
+        self.accountnumber = accountnumber
+        self.name = name
+        self.balance = deposit
+        
+    def deposit(self,amount):
+        self.balance += amount
+        print(f"Deposited {amount}. and New Balance: {self.balance}")
+    
+    def withdraw(self,amount):
+        if amount > self.balance:
+            print("Insufficient funds!!")
+        else:
+            self.balance -=amount
+            print(f"Withdraw {amount}. New Balance: {self.balance}")
+    
+    def checkbalance(self):
+        return self.balance
+    
+    def __str__(self):
+        return f"Account: {self.accountnumber}, Name: {self.name}, Balance: {self.balance}"
+    
+class AccountManagement:
+    def __init__(self):
+        self.accounts = {}
+    
+    def addaccount(self,account):
+        self.accounts[account.accountnumber] = account
+        print(f"Account {account.accountnumber} added.")
+        
+    def deleteaccount(self,accountnumber):
+        if accountnumber in self.accounts:
+            del self.accounts[accountnumber]
+            print(f"Account {accountnumber} Deleted.")
+        else:
+            print(f"Account Not Found.")
+    
+    def updateaccount(self,accountnumber,name=None,deposit=None):
+        if accountnumber in self.accounts:
+            account = self.accounts[accountnumber]
+            if name:
+                account.name = name
+                print(f"Account {accountnumber} name updated to {name}.")
+            if deposit is not None:
+                account.deposit(deposit)
+        else:
+            print("Account Not Found.")
+    
+    def getaccount(self,accountnumber):
+        return self.accounts.get(accountnumber,None)
+
+class Bank(bankaccount,AccountManagement):
+    def __init__(self):
+        AccountManagement.__init__(self)
+
+bank = Bank()
+
+account1 = bankaccount('1002563','Akshay',10000)
+account2 = bankaccount('1125687','Arjun',80000)
+
+bank.addaccount(account1)
+bank.addaccount(account2)
+
+print(account1.checkbalance())
+print(account2.checkbalance())
+
+account1.deposit(1000)
+account2.deposit(2500)
+
+bank.updateaccount('1002563',name="Abhi",deposit=2500)
+bank.deleteaccount('456')
+
+account = bank.getaccount('1002563')
+if account:
+    print(account)
+
+
+
+2. Revise the question 1; by adding 2 types of account, Saving account and Current account.
+
+Where the current account conditions are as follows
+
+product 1 : A Premium Banking Program exclusively designed to meet the business needs of HNI customers.
+Balance Requirement ₹5,00,000/-
+Interest earned NA
+Suited for Corporates
+
+and
+
+Zero2One Program is a one-stop solution for startups that takes care of banking as well as beyond banking needs of the customers
+Balance Requirement ₹1,00,000/- (Waiver for first 3 years)
+Interest earned NA
+Suited for Budding Startups
+
+Apply OOP Concepts.
+
+=======>>>>>>
+
+class Account:
+    def __init__(self, account_number, account_holder, balance):
+        self.account_number = account_number
+        self.account_holder = account_holder
+        self.balance = balance
+
+    def deposit(self, amount):
+        self.balance += amount
+        print(f"Deposited ₹{amount} into account {self.account_number}. New balance: ₹{self.balance}")
+
+    def withdraw(self, amount):
+        if amount > self.balance:
+            print("Insufficient balance")
+        else:
+            self.balance -= amount
+            print(f"Withdrew ₹{amount} from account {self.account_number}. New balance: ₹{self.balance}")
+
+class SavingAccount(Account):
+    def __init__(self, account_number, account_holder, balance, interest_rate):
+        super().__init__(account_number, account_holder, balance)
+        self.interest_rate = interest_rate
+
+    def add_interest(self):
+        interest = self.balance * self.interest_rate / 100
+        self.deposit(interest)
+        print(f"Added interest ₹{interest} to account {self.account_number}. New balance: ₹{self.balance}")
+
+class CurrentAccount(Account):
+    def __init__(self, account_number, account_holder, balance, product_type):
+        super().__init__(account_number, account_holder, balance)
+        self.product_type = product_type
+
+    def check_balance_requirement(self):
+        if self.product_type == "Premium Banking Program":
+            if self.balance < 500000:
+                print("Balance requirement not met. Minimum balance required: ₹5,00,000")
+            else:
+                print("Balance requirement met.")
+        elif self.product_type == "Zero2One Program":
+            if self.balance < 100000:
+                print("Balance requirement not met. Minimum balance required: ₹1,00,000 (Waiver for first 3 years)")
+            else:
+                print("Balance requirement met.")
+
+saving_account = SavingAccount("SAV123", "John Doe", 10000, 2)
+saving_account.deposit(5000)
+saving_account.add_interest()
+
+current_account1 = CurrentAccount("CUR123", "ABC Corporation", 500000, "Premium Banking Program")
+current_account1.check_balance_requirement()
+
+current_account2 = CurrentAccount("CUR456", "StartupX", 50000, "Zero2One Program")
+current_account2.check_balance_requirement()
+
+
+------------------------------python108-------------------------------
+
+open cmd into the C:\sqlite3(set the path into the env)
+then close it cmd
+
+then open cmd from windows
+
+write command for pandas, numpy, matplotlib
+
+->py
+->pip -V
+->pip list (for check package installed or not)
+->pip install pandas
+->pip install numpy
+->pip install matplotlib
+
+write code in python file
+	|
+	|
+	|
+Iterables:-
+
+=============================================
+
+1)List:
+fruits=["apple","apple","mango","kiwi"]
+
+print(fruits)
+print(fruits[1])
+
+#Traverse in fruits
+for i in range(0,3):
+    print(i,":",fruits[i])
+
+for i in fruits:
+    print(i)
+
+#functions of list :
+
+1)append:
+-------------------
+fruits.append("banana")
+for i in fruits:
+    print(i)
+
+2)pop : 
+-------------------
+x=fruits.pop()
+print(x)
+print(fruits)
+
+3)del : 
+-------------------
+del fruits[1]
+print(fruits)
+
+4)insert :
+-------------------
+fruits.insert(0,"banana")
+print(fruits)
+
+5)sort : 
+-------------------
+fruits.sort()
+print(fruits)
+
+6)len : 
+-------------------
+x=len(fruits)
+print(x)
+
+7)count: 
+-------------------
+x=fruits.count("apple")
+print(x)
+-------------------
+Aggregate func :
+1)sum()
+2)max()
+3)min()
+
+#Find average
+n=[10,20,30,40,50]
+x=sum(n)
+z=len(n)
+avg=x/z
+print(avg)
+-------------------
+2D list : List of list
+data=[
+    [10,20,30],
+    [40,50,60],
+    [70,80,90]
+]
+#print(data[1])
+#print(data[1][2])
+
+for i in data:
+    for j in i:
+        print(j,end=" ")
+    print()
+-------------------
+#user Input in a list :
+
+x=[]
+n=int(input("Enter no of data = "))
+for i in range(0,n):
+    z=int(input("Enter data = "))
+    x.append(z)
+
+for i in x:
+    print(i)
+-------------------
+#2d list user input
+
+x=[]
+r=int(input("Enter rows = "))
+c=int(input("Enter cols = "))
+
+for i in range(0,r):
+    temp=[]
+    for j in range(0,c):
+        z=int(input("Enter value = "))
+        temp.append(z)
+    x.append(temp)
+
+for i in x:
+    for j in i:
+        print(j,end=" ")
+    print()
+=============================================
+
+
+
+
+2)Dictionary:
+stud={
+    "sid":101,
+    "sname":"Shiv",
+    "gender":"Female",
+    "marks":{
+            "sci":100,
+            "maths":50,
+            "gk":0,
+       }
+}
+#print(stud["gender"])
+#print(stud)
+
+#traverse on dictionary :
+#for i in stud:
+#    print(i,":",stud[i])
+
+#print(stud["marks"]["sci"])
+
+#traverse on marks:
+for i in stud["marks"]:
+    print(i,":",stud["marks"][i])
+
+#Find total marks:
+totmarks=0
+for i in stud["marks"]:
+    totmarks=totmarks+stud["marks"][i]
+stud["totmarks"]=totmarks
+for i in stud:
+    print(i,":",stud[i])
+
+#To add data on dictionary
+#name_dict[key]=value
+#stud["course"]="BCA"
+#stud["marks"]["ss"]=90
+#print(stud)
+
+#To delete in dictionary
+stud.pop("dd")
+print(stud["phone"][1])
+
+for i in stud:
+    print(i,":",stud[i])
+
+user Input dictionary
+stud={}
+n=int(input("Enter no of data = "))
+
+for i in range(0,n):
+    key=input("Enter key = ")
+    value=input("Enter value = ")
+
+    stud[key]=value
+
+for i in stud:
+    print(i,":",stud[i])
+
+=>Dictionary with List:
+stud=[
+    {
+        "sid":101,
+        "sname":"megha",
+        "gender":"female",
+        "marks":98
+    },
+    {
+        "sid":102,
+        "sname":"rutu",
+        "gender":"female",
+        "marks":76
+    },
+    {
+        "sid":103,
+        "sname":"krishi",
+        "gender":"female",
+        "marks":78
+    }
+]
+
+print(stud[0]["sname"])
+print(stud[0])
+
+for i in stud[0]:
+    print(i,":",stud[0][i])
+
+print(stud[0]["marks"]+stud[1]["marks"]+stud[2]["marks"])
+
+=============================================
+
+
+3)tuples:
+
+thistuple = ("apple", "banana", "cherry")
+print(thistuple)
+
+#access tuple items:
+print(thistuple[1])
+print(thistuple[-1]) //it prints last item of tuple
+
+Range of Indexing(slicing):
+print(thistuple[2:5])  
+#This will return the items from position 2 to 5.
+#Remember that the first item is position 0,
+#and note that the item in position 5 is NOT included
+print(thistuple[:4])
+print(thistuple[2:])
+print(thistuple[-4:-1])
+if "apple" in thistuple:
+  print("Yes, 'apple' is in the fruits tuple")
+
+user input----------
+x=()
+y=[]
+n=int(input("ENter value:"))
+for i in range(0,n):
+    val=input("Enter value:")
+    y.append(val)
+x=tuple(y)
+
+print(x)'''
+x=(1,2,3,4)
+print(x)
+
+'''to update in tuple--------
+x = ("apple", "banana", "cherry")
+y = list(x)
+y[1] = "kiwi"
+x = tuple(y)
+
+print(x)
+
+add tuple to a tuple---------
+
+thistuple = ("apple", "banana", "cherry")
+y = ("orange",)
+thistuple+= y
+
+print(thistuple)'''
+
+=============================================
+
+4)sets:
+myset={"apple","mango","orange","apple"}
+myset2={"kiwi","pineapple"}
+print(myset)
+for x in myset:
+    print(x)
+print("orange" in myset)
+myset.add("kiwi")
+myset.update(myset2)
+print(myset)
+
+
+*******************************************
+
+Pandas:
+'''
+pip install pandas.
+there are two types of pandas.
+1)Series: for 1d array
+2)DataFrame:it is used for 2D array.
+    functions:==
+    1)df.head():prints top 5 record.
+        syntax:
+        df.head(number)
+    2)df.tail():prints bottom 5 record.
+    3)df.index:
+        it displays only index
+        RangeIndex(start=0, stop=6, step=1)
+    4)shapes:it defines total number of rows and columns.
+        1st is total no of rows.
+        2nd is total no of columns.
+    5)colums:it displays only columns name.
+        i.e, headers
+    6)size:it multiply total number of rows and columns.
+    7)dtypes:it displays schema of all columns.
+        
+'''
+import pandas as pd
+
+'''data=pd.Series([1,2,'megha',4,5,6],index=['a','b','c','d','e','f'])
+print(data[-3:])'''
+data=pd.Series({'a':1,'b':2,'c':3,'d':4},index=['b','d','a','c'])
+print(data)
+
+
+
+how to create DataFrames
+import pandas as pd
+
+df=pd.DataFrame([
+        [1,'megha','HR',30000],
+        [2,'shivangi','sales',31000]
+    ],
+    columns=['eid','ename','Des','salary']
+            )
+print(df.ename)
+
+how to read csv  file using pandas:
+	df=pd.read_csv("student.csv")
+#print(df.head(3))
+#print(df.tail(3))
+#print(df[["per","name"]])
+#print(df.index)
+#print(df.shape)
+#print(df.columns)
+#print(df.size)
+print(df.dtypes)
+
+how to create new csv file with dataframe
+import pandas as pd
+df=pd.DataFrame([
+        [1,'megha','HR',30000],
+        [2,'shivangi','sales',31000]
+    ],
+    columns=['eid','ename','Des','salary']
+            )
+print(df.ename)
+with open("employee2.csv",'w',newline="") as f:
+    df.to_csv(f)
+
+find minimum and maximum
+import pandas as pd
+
+
+'''data=pd.read_csv('fs.csv')
+df=pd.DataFrame(data)
+s1=data.m1
+s2=data.m2
+
+print('maximum marks in subject1:',s1.max())
+print('maximum marks in subject2:',s2.max())
+
+#minimum marks==
+
+print('maximum marks in subject1:',s1.min())
+print('maximum marks in subject2:',s1.min())'''
+data={'sid':[201,202,203,204],
+      'sname':["apple","mango","orange","chiku"],
+      'sem':[5,2,3,1],
+      'age':[11,12,13,14]}
+df=pd.DataFrame(data)
+print(df)
+
+
+Insert data in database file using pandas
+
+import sqlite3 as s
+import pandas as pd
+import csv as c
+
+try:
+    db=s.connect("C:\sqlite3\employee.db")
+    print("database connected")
+    cur=db.cursor()
+
+    qry="insert into employee values(?,?,?)"
+    id1=int(input("Enter Employee Id:"))
+    ename=input("ENter emp name:")
+    price=int(input("Enter Price:"))
+
+    rec=cur.execute(qry,(id1,ename,price))
+    print("record inserted")
+
+    sel="select * from employee"
+    allrec=cur.execute(sel)
+    with open("emptocsv.csv","w",newline="") as obj:
+        fobj=c.writer(obj)
+        fobj.writerow(['eid','ename','salary'])
+        fobj.writerows(allrec)
+    print("csv created")
+
+
+
+finally:
+    db.commit()
+    db.close()
+------------------------------------------
+
+Update data in database file using pandas
+
+import sqlite3 as s
+import pandas as pd
+import csv as c
+
+try:
+    
+    db = s.connect("C:\\sqlite3\\employee.db")  
+    print("Database connected")
+    cur = db.cursor()
+
+    
+    qry = "UPDATE employee SET name = ?, price = ? WHERE id = ?"
+    
+    
+    id1 = int(input("Enter Employee Id:"))
+    ename = input("Enter employee name:")
+    price = int(input("Enter Price:"))
+
+    rec = cur.execute(qry, (ename, price, id1))  
+    print("Record updated")
+
+    sel = "SELECT * FROM employee"
+    allrec = cur.execute(sel)
+
+    with open("emptocsv.csv", "w", newline="") as obj:
+        fobj = c.writer(obj)
+        fobj.writerow(['eid', 'ename', 'salary'])
+        fobj.writerows(allrec)
+    
+    print("CSV created")
+
+finally:
+    db.commit()
+    db.close()
+-------------------------------
+
+Delete data in database file using pandas
+    
+import sqlite3 as s
+import pandas as pd
+import csv as c
+
+try:
+    
+    db = s.connect("C:\\sqlite3\\employee.db")  
+    print("Database connected")
+    cur = db.cursor()
+
+    
+    qry = "DELETE FROM employee WHERE id = ?"
+    
+    
+    id1 = int(input("Enter Employee Id to delete : "))
+
+    rec = cur.execute(qry, (id1,))  
+    print("Record deleted")
+
+    sel = "SELECT * FROM employee"
+    allrec = cur.execute(sel)
+
+    with open("emptocsv.csv", "w", newline="") as obj:
+        fobj = c.writer(obj)
+        fobj.writerow(['eid', 'ename', 'salary'])
+        fobj.writerows(allrec)
+    
+    print("CSV created")
+
+finally:
+    db.commit()
+    db.close()
+
+============================
+
+Matplotlib in py
+
+open cmd into the C:\sqlite3(set the path into the env)
+
+import pandas as pd
+import matplotlib.pyplot as plot
+import sqlite3 as s
+import csv as c
+'''
+data = pd.read_csv("C:\sqlite3\Matplotlib\chart.csv")
+#print(data)
+#data.plot.line(x="name",y="salary",title="emp sheet",color="red")
+#data.plot.bar(x="name",y="salary",title="emp sheet",color="red")
+#data.plot.hist(x="name",y="salary",title="emp sheet",color="red")
+data.plot.pie(x="name",y="salary",title="emp sheet")
+plot.xlabel("name")
+plot.ylabel("salary")
+plot.show()
+'''
+
+try:
+    db=s.connect("C:\sqlite3\main.db")
+    print("---db connect---")
+    cur=db.cursor()
+    print("cursor created")
+    rec=cur.execute("select * from tbldemo")
+    fetch=rec.fetchall()
+
+    with open("charts.csv","w",newline="") as f:
+        fobj=c.writer(f)
+        fobj.writerow(["no","bookname","price"])
+        fobj.writerows(fetch)
+
+    print("csv created")
+    data=pd.read_csv("charts.csv")
+    print(data)
+    data.plot.pie(x="bookname",y="price",title="book sheet")
+    plot.xlabel("bookname")
+    plot.ylabel("price")
+    plot.show()
+    
+except:
+    print("===Something went wrong===")
+
+finally:
+    db.commit()
+    db.close()
+====================================
+
+matplot with sqlite3
+try:
+    db=s.connect("C:\sqlite3\main.db")
+    print("--database connected--")
+    cur=db.cursor()
+    print("cursor created")
+    rec=cur.execute("select * from tbldemo")
+    fetch=rec.fetchall()
+    with open("charts.csv","w",newline="") as f:
+        fobj=c.writer(f)
+        fobj.writerow(["no","name","price"])
+        fobj.writerows(fetch)
+
+    print("csv created")
+    data=pd.read_csv("charts.csv")
+    #print(data)
+    data.plot(x="name",y="price",title="employee sheet",color="red")
+    #data.plot.line(x="ename",y="salary",title="employee sheet",color="red")
+    #data.plot.hist(x="ename",y="salary",title="employee sheet",color="red")
+    plot.xlabel("Employee Id")
+    plot.ylabel("EMployee Salary")
+    plot.show()
+except:
+    print("==something went wrong==")
+finally:
+    db.commit()
+    db.close()
+
+
+
+*****************************************
+
+
+NumPy in python
+
+
+import numpy as np
+'''
+arange(): is used to create single series.
+    for ex.: array = np.arange(starting number, ending number)
+    it prints series from starting number to ending number -1.
+
+reshape(): is used to create ndim array.
+    for ex.: array = np.arange().reshape(row,columns)
+    it requires two parameters 1st is total number of rows and
+    2nd is total number of columns.
+
+
+#arr = np.arange(11,15).reshape(2,2)
+#arr = np.zeros(4)
+#arr = np.zeros((2,4))
+#arr = np.ones((3,4))
+#print(arr)
+arr = np.array([[1,2,3,4],[5,6,7,8],[9,10,11,12]])
+print(arr.ndim)
+print(arr.size)
+print(arr.shape)
+print(arr.dtype)
+
+===> Slicing in 1D array
+
+arr = np.array([10,20,30,40,50,60,70])
+print(arr[1:3])#[20 30]
+print(arr[1:6:2])#[20 40 60]
+print(arr[-1:-3:-1])#[70 60]
+print(arr[::2])#[10 30 50 70]
+print(arr[::-1])#[70 60 50 40 30 20 10]
+
+===>slicing in 2D array
+
+arr=np.array([[15,16,17],[25,26,27],[35,36,37],[45,46,47]])
+print(arr[1,])#[25 26 27]
+print(arr[:,1])#[16 26 36 46]
+print(arr[1:3,1:3])#[[26 27],[36 37]]
+print(arr[1:3,])#[[25 26 27],[35 36 37]]
+print(arr[:,1:3])#[[16 17],[26 27],[36 37],[46 47]]
+print(arr[1:3,1])#[26 36]
+print(arr[1:3,:1])#[[25],[35]]
+
+===>arithmetic operators on numpy
+1)Addition(+)
+2)SUb(-)
+3)mul(*)
+4)matrix mul(@)
+5)div(/)
+6)expontiation(**)
+7)module(%)
+8)transpose()
+
+a1=np.array([[1,2],
+             [3,4]])
+a2=np.array([[11,12],
+            [13,14]])
+#a2=np.array([11,12,13,14,15])
+
+#a3=a1+a2
+#a3=a2-a1
+#a3=a1*a2
+#a3=a1/a2
+#a3=a2**a1
+#a3=a2 % a1
+#a3=a1@a2
+#a3=a1.transpose()
+#print(a1.transpose())
+#print(a3)
+
+===>sorting
+to sort array in numpy sort() is used
+1)np.sort():
+    it will sort elements.
+    it  generates another copy of array.
+    by default it will sort elements in row wise.
+    it you want to sort in elements in column wise then axis is used.
+    axis property requires two boolean values either 1 or 0.
+    if axis=0: then it will sorts elements in column wise.
+    if axis=1: then it will sorts elements in row wise i.e. by default.
+2)np.argsort():
+    it will sort elements too.
+    bt it display sorted element's index numbers.
+3)arrayName.sort():
+    it will sort elements.
+    it not generate another copy of array.
+    by default it will sort elements in row wise.
+    it you want to sort in elements in column wise then axis is used.
+    axis property requires two boolean values either 1 or 0.
+    if axis=0: then it will sorts elements in column wise.
+    if axis=1: then it will sorts elements in row wise i.e. by default.
+'''
+
+x=np.array([[12,11,15],[21,25,20],[18,27,16]]) 
+#y=np.sort(x,axis=0)
+#y=np.argsort(x,axis=0)
+x.sort()
+print(x)
+
+
+***************************************************
+
+Python With OOP
+**user-defined function in python
+    def add(megha,a,b):
+        c=a+b
+        print(c)
+    def sub(megha,a,b):
+        c=a-b
+        print(c)
+    def mul(megha,a,b):
+        c=a*b
+        print(c)
+    def div(megha,a,b):
+        c=a/b
+        print(c)
+    
+
+add(a,b)
+sub(a,b)
+mul(a,b)
+div(a,b)
+
+
+user input and class
+class add:
+    def add(megha,a,b):
+        c=a+b
+        print(c)
+    def sub(megha,a,b):
+        c=a-b
+        print(c)
+    def mul(megha,a,b):
+        c=a*b
+        print(c)
+    def div(megha,a,b):
+        c=a/b
+        print(c)
+    
+#to make object of a class 
+a1=add()
+a=int(input("Enter a:"))
+b=int(input("Enter b:"))
+a1.add(a,b)
+a1.sub(a,b)
+a1.mul(a,b)
+a1.div(a,b)
+==================================
+constructor
+'''
+constructor:
+    constructor are created by _init_() function.
+    constructor is invoke automatically when we create object of class.
+    constructor is used to assign a values.
+    
+    there are two types of constructors:
+    1)default constructor:
+        class emp:
+    def _init_(self):
+        self.id=101
+        self.name='apple'
+        self.salary=20000
+        
+    def display(self):
+        print("sid = ",self.id)
+        print("sname = ",self.name)
+        print("salary = ",self.salary)
+
+
+e=emp()
+e.display()
+
+    2)parameterize constructor:
+    class emp:
+    def _init_(self,sid,sname,sal):
+        self.id=sid
+        self.name=sname
+        self.salary=sal
+        
+    def display(self):
+        print("sid = ",self.id)
+        print("sname = ",self.name)
+        print("salary = ",self.salary)
+
+sid=int(input("Enter sid :"))
+sname=input("Enter sname:")
+salary=int(input("Enter salary:"))
+e=emp(sid,sname,salary)
+e.display()
+
+'''
+class emp:
+    def _init_(self):
+        self.id=101
+        self.name='apple'
+        self.salary=20000
+        
+    def display(self):
+        print("sid = ",self.id)
+        print("sname = ",self.name)
+        print("salary = ",self.salary)
+e=emp()
+e.display()
+
+OOP  with ierables
+**example 1:
+class emp:
+    def _init_(self,eid,ename,sal):
+        self.emp={}
+        self.emp["eid"]=eid
+        self.emp["ename"]=ename
+        self.emp["sal"]=sal
+
+    def display(self):
+        for i in self.emp:
+            print(i,":",self.emp[i])
+
+e=emp(101,'apple',2000)
+e.display()
+
+**example 2:
+class emp:
+    def _init_(self,eid,ename,sal):
+        self.emp={}
+        self.emp["eid"]=eid
+        self.emp["ename"]=ename
+        self.emp["sal"]=sal
+
+    def display(self):
+        for i in self.emp:
+            print(i,":",self.emp[i])
+
+eid=int(input("Enter eid:"))
+ename=input("Enter ename:")
+salary=int(input("Enter salary:"))
+e=emp(eid,ename,salary)
+e.display()
+------------------------------------------
+Relationships:
+
+====>inheritance(is a)
+class parent:
+    def getData(self):
+        print("parent class method called")
+
+class child(parent):
+    def PrintData(self):
+        print("child class method called")
+
+c=child()
+c.PrintData()
+c.getData()
+
+class teacher:
+    def _init_(self,tid,tname,sal):
+        print("parent class constructor called")
+        self.tid=tid
+        self.tname=tname
+        self.salary=sal
+        
+    def getData(self):
+        print("tid =",self.tid,"tname =",self.tname,"salary =",self.salary)
+
+class student(teacher):
+    def getStud(self,sid,sname,course):
+        print("sid =",sid,"sname =",sname,"course =",course)
+
+tid=int(input("Enter Tid:"))
+tname=input("Enter tname:")
+salary=input("Enter Salary:")
+sid=int(input("Enter sid:"))
+sname=input("Enter sname:")
+course=input("Enter Course:")
+s=student(tid,tname,salary)
+s.getData()
+s.getStud(sid,sname,course)
+---------------------------------------
+===>containership(has a)
+
+class parent:
+    def printParent(self):
+        print("parent class called")
+
+class child:
+    p=parent()
+    def printChildData(self):
+        print("child class called")
+
+c=child()
+c.printChildData()
+c.p.printParent()'''
+
+class teacher:
+    def getData(self,tid,tname):
+        self.tid=tid
+        self.tname=tname
+
+    def printData(self):
+        print("tid=",self.tid,"tname=",self.tname)
+
+class student:
+    def _init_(self):
+        self.t=teacher()
+
+    def getStud(self,sid,sname,tid,tname):
+        self.sid=sid
+        self.sname=sname
+        self.t.getData(tid,tname)
+
+    def printStud(self):
+        self.t.printData()
+        print("sid=",self.sid,"sname=",self.sname)
+
+s=student()
+s.getStud(101,'apple',1,'abc')
+s.printStud()
+
+========================Extra===================
+//dictionary with user inpute
+student=[]
+while True:
+    print("Press 1 to Add Student")
+    print("Press 2 to Calculate Total Marks and Grade")
+    print("Press 3 to Display A Grade Students")
+    print("Press 4 to Display B and C Grade Students")
+    print("Press 5 to Display All Students")
+    print("Press 6 to Exit")
+
+    stud={}
+    n = int(input("Enter Your Choice==="))
+    if n==1:
+        sid=int(input("Enter Sid:"))
+        sname=input("Enter Student Name:")
+        marks1=int(input("Enter Marks1:"))
+        marks2=int(input("Enter Marks2:"))
+        marks3=int(input("Enter Marks3:"))
+
+        stud["sid"]=sid
+        stud["sname"]=sname
+        stud["marks1"]=marks1
+        stud["marks2"]=marks2
+        stud["marks3"]=marks3
+
+        for i in stud:
+            print(i,":",stud[i])
+        student.append(stud)
+        
+    elif n==2:
+        print("Total marks and Percentage")
+        for i in student:
+            totalmarks=0
+            totalmarks=totalmarks + i["marks1"] + i["marks2"] + i["marks3"]
+            print("TotalMarks",totalmarks)
+            
+            percentage=(totalmarks/3)
+            print("Percentage",percentage)
+        
+            if percentage>80:
+                grade="A Grade"
+            elif percentage>70:
+                grade="B Grade"
+            elif percentage>60:
+                grade="C Grade"
+            elif percentage>50:
+                grade="D Grade"
+            else:
+                grade="E Grade"
+                
+            print("Grade",grade)
+            i["Grade"]=grade
+    elif n==3:
+        print("A Grade Students")
+        for i in student:
+            if i["Grade"]=="A Grade":
+                print(i)
+    elif n==4:
+        print("B and C Grade Students")
+        for i in student:
+            if i["Grade"]=="B Grade" or i["Grade"]=="C Grade":
+                print(i)
+            
+    elif n==5:
+        for i in student:
+            print(i)
+    else:
+        break
+
+==============================================================
+
+
+List:
+
+
+fruits=["orange","apple","mango","kiwi","apple"]
+print(fruits)
+print(fruits[1])
+
+#traverse on list
+
+for i in range(0,4):
+    print(i,fruits[i])
+
+#fruits.append("grapes")
+fruits.insert(0,"grapes")
+print(fruits)
+
+#fruits.pop()
+del fruits[2]
+print(fruits)
+
+print("Length is ",len(fruits))
+
+a=fruits.count("apple")
+print(a)
+fruits.sort()
+print(fruits)
+
+myList=[]
+
+while True:
+    ch=int(input("Enter element"))
+    myList.append(ch)
+
+
+    choice=input("Press Y to Continue and N to Exit:")
+    if choice.lower()=="n":
+        break
+
+
+for x in myList:
+    print(x)
+
+
+mat1=[
+        [10,20,30],
+        [40,50,60],
+        [70,80,90]
+    ]
+
+for i in mat1:
+    for j in i:
+        print("%4d"%(j),end="")
+    print()
+
+Take 2 static matrix and add them into 3rd matrix
+----------------------------------------------------
+mat=[]
+for i in range(0,3):
+    row=[]
+    for j in range(0,3):
+        n=int(input("Enter number"))
+        row.append(n)
+    mat.append(row)
+
+for i in mat:
+    for j in i:
+        print("%4d"%(j),end="")
+    print()
+
+
+mat1=[]
+for i in range(0,3):
+    row1=[]
+    for j in range(0,3):
+        n = int(input("Enter Number for Mat1: "))
+        row1.append(n)
+
+    mat1.append(row1)
+for p in mat1:
+    print(p)
+
+mat2=[]
+for i in range(0,3):
+    row2=[]
+    for j in range(0,3):
+        n = int(input("Enter Number for Mat2: "))
+        row2.append(n)
+
+    mat2.append(row2)
+
+for m in mat2:
+    print(m)
+
+choice=int(input("Press 1 for add \n 2 to sub \n 3 to transpose \n 4 to exit: "))
+if choice==1:
+    add = []
+    for i in range(0,3):
+        row = []
+        for j in range(0,3):
+            row.append(mat1[i][j] + mat2[i][j])
+        add.append(row)
+    print("Addition: ")
+    for row in add:
+        print(row)
+elif choice==2:
+    sub = []
+    for i in range(0,3):
+        row = []
+        for j in range(0,3):
+            row.append(mat1[i][j] - mat2[i][j])
+        sub.append(row)
+    print("Subtraction: ")
+    for row in sub:
+        print(row)
+elif choice==3:
+    transpose1 = []
+    transpose2 = []
+    for i in range(0,3):
+        row1 = []
+        row2 = []
+        for j in range(0, 3):
+            row1.append(mat1[j][i])
+            row2.append(mat2[j][i])
+        transpose1.append(row1)
+        transpose2.append(row2)
+
+    print("Transpose Mat1:")
+    for row in transpose1:  
+        print(row)
+    
+    print("Transpose Mat2:")
+    for row in transpose2:
+        print(row)
+elif choice==4:
+    print("Exit---")
+else:
+    print("Invalid Choice")
+----------------------------------------
+emp={
+        "eid":101,
+        "ename":"Megha",
+        "salary":30000
+    }
+print(emp)
+print(emp["salary"])
+
+#to add in dictionary
+#syntax:
+#dictionaryName["key"]="value"
+emp["desc"]="HR"
+print(emp)
+
+#user input in dictionary
+emp={}
+n=int(input("ENter number:"))
+for i in range(0,n):
+    key=input("ENter your key:")
+    value=input("ENter your value:")
+    emp[key]=value
+
+print(emp)
+
+
+#traverse on dictionary
+emp={
+        "eid":101,
+        "ename":"Megha",
+        "salary":30000
+    }
+for i in emp:
+    print(i,":",emp[i])
+
+#User input take three subject marks & find total marks & find percentage & find grades    
+
+
+std={
+        "sid":1,
+        "sname":"Roshan"
+    }
+std["course"]="ICT"
+print(std)
+
+
+std={}
+n = int(input("Enter value of key"))
+for i in range(0,n):
+    key = input("Enter Key: ")
+    value = input("Enter Value: ")
+    std[key]=value
+print(std)
+
+std={
+        "sid":1,
+        "sname":"Roshan"
+    }
+for i in std:
+    print(i,":",std[i])
+
+std={}
+n = int(input("Enter number: "))
+for i in range(0,n):
+    key = input("Enter Key: ")
+    value = int(input("Enter Value: "))
+    std[key]=value
+print(std)
+
+total = 0
+for i in std:
+    total = total+std[i]
+print("Total: ",total)
+
+std["total"]=total
+print(std)
+
+per = 1
+for i in std:
+    per = total/3
+print("Per: ",per)
+
+std["per"]=per
+print(std)
+
+if per>70:
+    grade="A"
+elif per>60:
+    grade="B"
+elif per>50:
+    grade="C"
+elif per>40:
+    grade="D"
+else:
+    grade="F"
+print("Grade: ",grade)
+std["grade"]=grade
+print(std)
+---------------------------------
+#to remove data in dictionary
+pop():
+    syntax:
+        DictName.pop(key)
+stud={
+        "rollno":101,
+        "name":"Roshan",
+        "marks":98
+    }
+print(stud)
+stud.pop("marks")
+print(stud)
+
+---------------------------------
+#dictionary with list
+stud=[
+        {
+            "rollno":101,
+            "name":"Roshan",
+            "marks":[98,95,65]
+        },
+        {
+            "rollno":102,
+            "name":"Harsh",
+            "marks":[95,65,25]
+        },
+        {
+            "rollno":103,
+            "name":"Rupam",
+            "marks":[65,78,78]
+        }
+    ]
+print(stud)
+print(stud[1])
+
+for i in stud:
+    print(i)
+---------------------------------------
+
+student=[]
+while True:
+    print("1 for Add Student")
+    print("2 for Calculate Total & Grade")
+    print("3 for display all A grade students")
+    print("4 for B and C Grade students")
+    print("5 for display all students")
+    print("6 for Exit")
+
+    stud={}
+    ch=int(input("Enter your choice: "))
+    if ch==1:
+        rollno=int(input("Enter RollNo: "))
+        name=input("Enter Name: ")
+        marks1=int(input("Enter Marks1: "))
+        marks2=int(input("Enter Marks2: "))
+        marks3=int(input("Enter Marks3: "))
+
+        stud["rollno"]=rollno
+        stud["name"]=name
+        stud["marks1"]=marks1
+        stud["marks2"]=marks2
+        stud["marks3"]=marks3
+
+        for i in stud:
+            print(i,":",stud[i])
+        student.append(stud)
+    elif ch==2:
+        for i in student:
+            total=0
+            total = total+i["marks1"]+i["marks2"]+i["marks3"]
+            print("Total: ",total)
+            i["total"]=total
+            per = total/3
+            print("per: ",per)
+            i["per"]=per
+
+            if per>70:
+                grade="A"
+            elif per>60:
+                grade="B"
+            elif per>50:
+                grade="C"
+            elif per>40:
+                grade="D"
+            else:
+                grade="F"
+            print("Grade: ",grade)
+            i["grade"]=grade
+
+    elif ch==3:
+        for i in student:
+            if i["grade"]=="A":
+                print(i)
+    elif ch==4:
+        for i in student:
+            if i["grade"]=="B" or i["grade"]=="C":
+                print(i)
+    elif ch==5:
+        for i in student:
+            print(i)
+    else:
+        break;
+------------------------------------------------------------------------------
+
+Tuple: 
+
+'''
+x = ("apple")
+print(x)
+print(type(x))
+x = ("apple","kiwi","orange")
+print(x)
+print(type(x))
+
+# User input in tuple
+x = ()
+y = []
+n = int(input("Enter number of elements: "))
+for i in range(0,n):
+    z = input("Enter values: ")
+    y.append(z)
+x = tuple(y)
+print(x)
+
+#Add tuple to tuple
+x = ("apple","kiwi","orange")
+y = ("mango",)
+x += y
+print(x)#add in tuple at last
+
+#To update in tuple
+x = ("apple","kiwi","orange")
+print(x)
+y = list(x)
+y[1] = "mango"
+x = tuple(y)
+print(x)
+
+================================================================================================================================
+
+
+------------------------------------------------------------------
+------------------------MSA Steps-----------------------
+First 3 jarfiles and domain.xml should be in the main folder
+
+then create main folder msaApp in that folder resourceapp and clientapp
+
+First create 2 app client and resource with archtype and then select javaee8-microprofile-archtype 
+
+Resource(Basically Api App)
+--in Resource app---
+make changes in pom.xml version to 3.2
+then restfulservices->ExampleService->
+@GET
+@Path("/hello")
+@Produces(Mediatype.text_html) //ws.rs valu import karvu
+public String getHello(){
+    return "<h1>Hello Resource App</h1>"
+}
+->then clean build app and run select payara server
+->Url to run app 
+    Resource/rest/example/gethello
+
+------now create secondapp clientApp with same steps as above------
+
+->sourcepackages->new interface->exampleinterface
+    @GET
+    @Path("/hello")
+@Produces(Mediatype.text_html) //ws.rs valu import karvu
+
+
+othersources->new folder META-INF -> new properties filename microprofile-config.properties 
+in thsn file 
+apiurl/mp-rest/url = http://localhost:8085/ResourceAppMSA/rest/example
+
+in interface file at the top
+@Registerclient(configkey = "apiurl")
+
+-------------create servlet----------
+sourcepackages->new servlet->ExampleServlet(package name servlets)
+
+in exampleservlet
+@inject
+@restclient
+exampleintereface ei;
+
+ei.getHello();//in servlet html code
+
+---------------now cleanbuild and run app-------------
+
+----both this should be run in terminal according to our app path ---
+
+java -jar payara-micro-5.2022.2.jar --deploy MSAApp/artifact/MSAApp.war --port 8085
+
+//here port number which we want our app to run
+
+java -jar payara-micro-5.2022.2.jar --deploy MSAClient/artifact/MSAClient.war --port 8086
+
+//After this we have to change port number in config file then chek if it is working or not 
+
+
+-----------------------------------------------------------------------------------------------------------DATABASE STARTS HERE--------------------------------------
+CREATE A DEMO DATABSE 
+
+  ->to create pool right click on payara server then adminconsole 
+  then in jdbc connection pools 
+  in this poolname
+  resourcetype 
+  database vendor mysql or mysql8
+
+->Properties in jdbc connection pools
+URL: jdbc:mysql//localhost:3306/demo?characterEncoding=UTF-8
+url: jdbc:mysql//localhost:3306/demo?characterEncoding=UTF-8
+ServerName : localhost
+password : root
+user : root
+portNumber : 3306
+driverClass : com.mysql.jdbx.optional.MysqlDataSource or com.mysql.jdbc.Driver or com.mysql.cj.jdbc.Driver
+driver : com.mysql.jdbx.optional.MysqlDataSource
+databaseName : demo
+
+->jdbc resource 
+    jdbc/msa
+    poolname : msapool
+
+----------------------------------------Code Starts here Db connection ends-------------------------
+
+In ResourceApp->Source Packages -> new Entity class from database 
+
+jdbc/url : jdbc:mysql://localhost/3306/demo?characterEncoding=UTF-8 useSSL=false
+
+-------------persistence will be created in config file ------------
+in persistence comment exclude tag
+
+------------noew create session bean-----------
+source packages -> ejbname (emamplbean) -> packages(beans)
+
+exampleservice.java(bean)
+
+@Stateless
+public class ExxampleBean{
+    @PersistenceContext(unitname = "poolname")
+    EntityManager em;
+
+    public Collection<TUsers> getAllUsers(){
+    return em.createnamedquery("tusers.findAll").getResultList();
+}
+
+}
+
+now we have to call gettall users in exampleservice in restful 
+@Inject
+exampleBean eb;
+
+@GET
+@Path("/getUSers")
+@produces(Mediatype.application_json)
+public Collection<Tusers> getUSers(){
+ 	return eb.getAllUSers();
+}
+
+------clean build and run the project------------------
+localhost:8080/ResourceApp/rest/example/getUsers
+
+
+
+=======================Now in ClientApp=========
+copy entities folder frrom resource app to client app in source packages
+
+->Interface file 
+@GET
+@Path("/GetUsers")
+@Produces(Mediatype.application_json)
+public collection<Tusers> getAllUsers();
+
+->Servlet file in html code
+    e1.getallusers();
+
+----run it on 8080 port number -----
+
+------------add Libraries in our app with cmd-----------
+ java -jar payara-micro-5.2022.2.jar --deploy MSAApp/artifact/MSAApp.war --port 8085 --addlibs mysql-connector-java-5.1.47-bin.jar --domainconfig domain.xml
+
+->now in domain.xml file 
+    <jdbc-connection-pool>
+    	datasourcename -> based on driverclass
+    	name = our pool name for eg mypool
+
+        <property name="password" value="root">
+         
+    </jdbc-connection-pool>
+
+<jdbc-resource pool-name>
+    jndi-name="jdbc/msa" //our jndi name from pool
+</jdbc-resource pool-name>
+
+<servers>
+    <resource-ref ref="jdbc/msa">
+    //or copy which is already exists in it and then change value based on our values 
+
+------------------domain changes ends---------------
+
+    
+
+
+------------
+resource app->sourcepackage->beans folder->examplebean.java
+
+/*
+ * Click nbfs://nbhost/SystemFileSystem/Templates/Licenses/license-default.txt to change this license
+ * Click nbfs://nbhost/SystemFileSystem/Templates/J2EE/EJB30/StatelessEjbClass.java to edit this template
+ */
+package beans;
+
+import entities.TUsers;
+import java.util.Collection;
+import javax.ejb.Stateless;
+import javax.persistence.EntityManager;
+import javax.persistence.PersistenceContext;
+
+/**
+ *
+ * @author harsh_ad
+ */
+@Stateless
+public class ExampleBean {
+
+    @PersistenceContext(unitName = "msapu")
+    EntityManager em;
+
+    public Collection<TUsers> getAllUsers() {
+        return em.createNamedQuery("TUsers.findAll").getResultList();
+    }
+
+}
+
+
+================================================================
+
+Connect a simple ResourceApp to ClientApp
+
+
+Create a One MSA project folder like MSAProject
+
+in MSAProject create a two project step:-
+
+Two Project Are Create (ResourceApp & ClientApp) both project in one folder(MSAProject)
+
+New Project
+	|
+Java with Maven -> Project from Archtype 
+	|
+serach(javaee8-payara-microprofile-archtype) & select it
+	|
+set project name & location
+	|
+    finish
+
+
+In Both project
+
+Select "Project Files" Folder
+	
+	|
+in "pom.xml" file change version in
+<dependency>
+   	<groupId>org.eclipse.microprofile</groupId>
+     	<artifactId>microprofile</artifactId>
+     	<version>3.2</version>
+     	<type>pom</type>
+     	<scope>provided</scope>
+</dependency>
+
+
+then after in ResourceApp
+
+in RESTful Web Services -> ExampleServices
+
+create a one other get method
+    @GET
+    @Path("/getHello")
+    @Produces(MediaType.TEXT_HTML)
+    public String getHello(){
+        return "<h1>Hello World...</h1>";
+    }
+
+then ResourceApp(right click)
+	|
+clean & build
+	|
+ResourceApp(right click)
+	|
+	Run 
+
+
+
+After that
+
+in ClientApp
+
+Other Sources folder
+	|
+src/main/resources folder(right click(new))
+	|
+create a new folder(META-INF)"also you can create with this name otherwise your project can not be run"
+	|
+in META-INF folder(right click(new)) 
+	|
+create a properties file(microprofile-config)"also you can create with this name otherwise your project can not be run"
+	|
+in microprofile-config file
+	|
+(define your ResourceApp url like this)
+apiUrl/mp-rest/url = http://localhost:8080/ResourceApp/rest/example
+	|
+then after open a Source Packages(right click) folder of ClientApp
+	|
+create a new Java Interface (package name = "interfaces")
+	|
+create a new Servlet (package name = "servlets")
+
+
+in interface file
+	|
+@RegisterRestClient(configKey = "apiUrl")
+
+public interface Example {
+    @GET
+    @Path("/getHello")
+    @Produces(MediaType.TEXT_HTML)
+    public String getHello();
+}
+(copy your @GET method from the ResourceApp ExampleServices without body)
+
+then after
+
+in Serverlet file
+	|
+    into the 
+@WebServlet
+	|
+    @Inject
+    @RestClient
+    Example ei;//interface file name
+	|
+into the html code
+out.println("<h1>Servlet ExampleServlet at " + ei.getHello() + "</h1>");
+
+
+then ClientApp(right click)
+	|
+clean & build
+	|
+ClientApp(right click)
+	|
+	Run 
+
+
+
+
+
+====================================
+
+Running both applications in paya-micro  instance
+
+Running resource application  in payara micro instance
+java -jar payara-micro-5.2022.2.jar --deploy MSAApp/artifact/MSAApp.war --port 8085
+
+Running client application  in payara micro instance
+java -jar payara-micro-5.2022.2.jar --deploy MSAClient/artifact/MSAClient.war --port 8086
+
+=====================================
+
+to run jpa based msa app with payara micro
+
+> java -jar payara-micro-5.2022.2.jar --deploy MSAApp/artifact/MSAApp.war --port 8085 --addlibs mysql-connector-java-5.1.47-bin.jar --domainconfig domain.xml
+
+to run client app 
+
+=====================================
+
+Ping Pool Connection With Database
+
+Services -> PayaraServer -> View Domain Admin Console
+		|
+JDBC -> JDBC Connection Pools -> new Pool
+
+Pool Name = msa/pool
+Resource Type = javax.sql.DataSource
+Database Driver Vendor = MySQL(if you have connector jar file version 5) then MySQL8(if you have connector jar file version 8)
+
+		|
+
+then click next then after set the properties
+
+		|
+
+URL = jdbc:mysql://localhost:3306/dbname?characterEncoding=UTF-8
+url: jdbc:mysql://localhost:3306/dbname?characterEncoding=UTF-8
+ServerName = localhost
+Password = root(phpMyAdmin no password)
+User = root(phpMyAdmin no username)
+DriverClassname = com.mysql.jdbc.Driver
+Driver = com.mysql.jdbc.Driver
+DatabaseName = dbname(your created database name)
+UseSSL = false
+	|
+thrn finish
+	|
+then after open pool and click on ping
+(if ping successed)
+
+	|
+
+JDBC Resources -> new(JNDI)
+
+		|
+
+JNDI Name = jdbc/msa
+Pool Name = msa/pool (select pool you can create)
+then ok
+
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
+
+
